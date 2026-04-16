@@ -322,3 +322,24 @@ MIT，详见 [LICENSE](./LICENSE)。
 ---
 
 <p align="center">如果这个教程对你有帮助，请给个 ⭐ Star 支持一下！</p>
+
+---
+
+## 联系作者
+
+如果你在学习过程中有任何问题，或想获取更多前端 / 全栈学习内容，欢迎扫码联系 👇
+
+<p align="center">
+  <table>
+    <tr>
+      <td align="center">
+        <img src="./resources/images/wehcat_qrcode.jpg" width="180" alt="微信二维码" /><br/>
+        <strong>微信</strong><br/>扫码添加好友，备注「nodejs」
+      </td>
+      <td align="center" style="padding-left: 40px">
+        <img src="./resources/images/official_qrcode.jpg" width="180" alt="公众号二维码" /><br/>
+        <strong>公众号</strong><br/>扫码关注，获取更多学习资料
+      </td>
+    </tr>
+  </table>
+</p>
