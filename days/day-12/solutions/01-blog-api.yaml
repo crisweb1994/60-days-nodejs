@@ -1,0 +1,1423 @@
+# Day 12 - 练习：博客系统完整 API 设计
+# OpenAPI 3.0 规范文档
+
+openapi: 3.0.3
+
+info:
+  title: 博客系统 API
+  description: |
+    60 天学会 Node.js — 博客系统后端 RESTful API 文档。
+
+    ## 认证方式
+    使用 Bearer Token（JWT）进行身份认证，在请求头中携带：
+    ```
+    Authorization: Bearer <token>
+    ```
+
+    ## 响应格式
+    所有接口均返回统一格式：
+    - 成功：`{ code: 0, message: "success", data: ... }`
+    - 列表：`{ code: 0, message: "success", data: [...], pagination: {...} }`
+    - 失败：`{ code: <错误码>, message: "...", errors: [...] }`
+
+    ## 版本
+    当前版本为 v1，通过 URL 路径区分：`/api/v1/`
+  version: 1.0.0
+  contact:
+    name: API 支持
+
+servers:
+  - url: http://localhost:3000/api/v1
+    description: 本地开发环境
+  - url: https://api.example.com/api/v1
+    description: 生产环境
+
+tags:
+  - name: Auth
+    description: 用户认证（注册、登录、登出）
+  - name: Users
+    description: 用户资源管理
+  - name: Posts
+    description: 文章资源管理
+  - name: Comments
+    description: 评论资源管理
+  - name: Tags
+    description: 标签资源管理
+  - name: Likes
+    description: 点赞资源管理
+
+# ─────────────────────────────────────────
+# 路由定义
+# ─────────────────────────────────────────
+paths:
+
+  # ── 认证 ──────────────────────────────
+  /auth/register:
+    post:
+      summary: 用户注册
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example:
+              username: johndoe
+              email: john@example.com
+              password: "Secret123!"
+      responses:
+        '201':
+          description: 注册成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /auth/login:
+    post:
+      summary: 用户登录
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: john@example.com
+              password: "Secret123!"
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+    post:
+      summary: 用户登出
+      tags: [Auth]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 登出成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/refresh:
+    post:
+      summary: 刷新 Token
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: 刷新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ── 用户 ──────────────────────────────
+  /users:
+    get:
+      summary: 获取用户列表
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/sort'
+        - name: search
+          in: query
+          description: 按用户名或邮箱搜索
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/UserSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /users/{userId}:
+    get:
+      summary: 获取单个用户
+      tags: [Users]
+      parameters:
+        - $ref: '#/components/parameters/userId'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/UserDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      summary: 更新用户信息
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/userId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/UserDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: 删除用户（仅管理员）
+      tags: [Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/userId'
+      responses:
+        '204':
+          description: 删除成功
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /users/{userId}/posts:
+    get:
+      summary: 获取用户的文章列表
+      tags: [Users, Posts]
+      parameters:
+        - $ref: '#/components/parameters/userId'
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, published]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/PostSummary'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── 文章 ──────────────────────────────
+  /posts:
+    get:
+      summary: 获取文章列表
+      tags: [Posts]
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/sort'
+        - name: status
+          in: query
+          description: 过滤文章状态（未登录只能查看 published）
+          schema:
+            type: string
+            enum: [draft, published]
+        - name: tag
+          in: query
+          description: 按标签过滤（标签名称）
+          schema:
+            type: string
+        - name: author
+          in: query
+          description: 按作者 ID 过滤
+          schema:
+            type: integer
+        - name: search
+          in: query
+          description: 按标题或内容搜索
+          schema:
+            type: string
+        - name: createdAfter
+          in: query
+          description: 创建时间起始（ISO 8601）
+          schema:
+            type: string
+            format: date-time
+        - name: createdBefore
+          in: query
+          description: 创建时间截止（ISO 8601）
+          schema:
+            type: string
+            format: date-time
+        - name: fields
+          in: query
+          description: 指定返回字段（逗号分隔），如 id,title,createdAt
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/PostSummary'
+
+    post:
+      summary: 创建文章
+      tags: [Posts]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePostRequest'
+            example:
+              title: "Node.js 入门指南"
+              content: "Node.js 是一个基于 V8 引擎的 JavaScript 运行时..."
+              tags: ["node.js", "javascript", "backend"]
+              status: draft
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PostDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /posts/{postId}:
+    get:
+      summary: 获取单篇文章
+      tags: [Posts]
+      parameters:
+        - $ref: '#/components/parameters/postId'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PostDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      summary: 更新文章（完整替换）
+      tags: [Posts]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/postId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePostRequest'
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PostDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      summary: 部分更新文章
+      tags: [Posts]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/postId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePostRequest'
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PostDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: 删除文章
+      tags: [Posts]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/postId'
+      responses:
+        '204':
+          description: 删除成功
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /posts/{postId}/comments:
+    get:
+      summary: 获取文章的评论列表
+      tags: [Posts, Comments]
+      parameters:
+        - $ref: '#/components/parameters/postId'
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+        - name: sort
+          in: query
+          description: 排序字段，默认 -createdAt（最新在前）
+          schema:
+            type: string
+            default: -createdAt
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Comment'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      summary: 为文章创建评论
+      tags: [Posts, Comments]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/postId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCommentRequest'
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Comment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /posts/{postId}/likes:
+    get:
+      summary: 获取文章点赞数及当前用户是否已点赞
+      tags: [Posts, Likes]
+      parameters:
+        - $ref: '#/components/parameters/postId'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/LikeStatus'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      summary: 点赞文章
+      tags: [Posts, Likes]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/postId'
+      responses:
+        '201':
+          description: 点赞成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/LikeStatus'
+        '400':
+          description: 已经点赞过了
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: 取消点赞文章
+      tags: [Posts, Likes]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/postId'
+      responses:
+        '200':
+          description: 取消成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/LikeStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /posts/{postId}/tags:
+    get:
+      summary: 获取文章的标签列表
+      tags: [Posts, Tags]
+      parameters:
+        - $ref: '#/components/parameters/postId'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Tag'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── 评论 ──────────────────────────────
+  /comments/{commentId}:
+    get:
+      summary: 获取单条评论
+      tags: [Comments]
+      parameters:
+        - $ref: '#/components/parameters/commentId'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Comment'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      summary: 更新评论内容
+      tags: [Comments]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/commentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCommentRequest'
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Comment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: 删除评论
+      tags: [Comments]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/commentId'
+      responses:
+        '204':
+          description: 删除成功
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /comments/{commentId}/likes:
+    post:
+      summary: 点赞评论
+      tags: [Comments, Likes]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/commentId'
+      responses:
+        '201':
+          description: 点赞成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/LikeStatus'
+        '400':
+          description: 已经点赞过了
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: 取消点赞评论
+      tags: [Comments, Likes]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/commentId'
+      responses:
+        '200':
+          description: 取消成功
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── 标签 ──────────────────────────────
+  /tags:
+    get:
+      summary: 获取标签列表
+      tags: [Tags]
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+        - name: sort
+          in: query
+          description: 排序字段（-postCount 按文章数降序）
+          schema:
+            type: string
+            default: -postCount
+        - name: search
+          in: query
+          description: 按标签名搜索
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Tag'
+
+    post:
+      summary: 创建标签
+      tags: [Tags]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTagRequest'
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Tag'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /tags/{tagId}:
+    get:
+      summary: 获取单个标签
+      tags: [Tags]
+      parameters:
+        - $ref: '#/components/parameters/tagId'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Tag'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      summary: 更新标签
+      tags: [Tags]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/tagId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTagRequest'
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Tag'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: 删除标签（仅管理员）
+      tags: [Tags]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/tagId'
+      responses:
+        '204':
+          description: 删除成功
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /tags/{tagId}/posts:
+    get:
+      summary: 获取标签下的文章列表
+      tags: [Tags, Posts]
+      parameters:
+        - $ref: '#/components/parameters/tagId'
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/sort'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/PostSummary'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+# ─────────────────────────────────────────
+# 组件定义
+# ─────────────────────────────────────────
+components:
+
+  # ── 公共参数 ──────────────────────────
+  parameters:
+    userId:
+      name: userId
+      in: path
+      required: true
+      description: 用户 ID
+      schema:
+        type: integer
+        example: 1
+
+    postId:
+      name: postId
+      in: path
+      required: true
+      description: 文章 ID
+      schema:
+        type: integer
+        example: 42
+
+    commentId:
+      name: commentId
+      in: path
+      required: true
+      description: 评论 ID
+      schema:
+        type: integer
+        example: 100
+
+    tagId:
+      name: tagId
+      in: path
+      required: true
+      description: 标签 ID
+      schema:
+        type: integer
+        example: 5
+
+    page:
+      name: page
+      in: query
+      description: 页码，从 1 开始
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+
+    limit:
+      name: limit
+      in: query
+      description: 每页数量
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+    sort:
+      name: sort
+      in: query
+      description: |
+        排序字段（逗号分隔，`-` 前缀表示降序）。
+        示例：`-createdAt,title` 表示按创建时间降序、标题升序。
+      schema:
+        type: string
+        example: -createdAt
+
+  # ── 响应快捷引用 ──────────────────────
+  responses:
+    BadRequest:
+      description: 请求参数错误
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: 40000
+            message: "参数验证失败"
+            errors:
+              - field: email
+                message: "邮箱格式不正确"
+
+    Unauthorized:
+      description: 未认证（Token 缺失或无效）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: 40100
+            message: "请先登录"
+
+    Forbidden:
+      description: 无权限操作
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: 40300
+            message: "无权限执行此操作"
+
+    NotFound:
+      description: 资源不存在
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: 40400
+            message: "资源不存在"
+
+    Conflict:
+      description: 资源已存在（如邮箱/用户名重复）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: 40900
+            message: "邮箱已被注册"
+
+  # ── 数据模型 ──────────────────────────
+  schemas:
+
+    # 通用响应结构
+    SuccessResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 0
+        message:
+          type: string
+          example: success
+        data:
+          type: object
+
+    PaginatedResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 0
+        message:
+          type: string
+          example: success
+        data:
+          type: array
+          items:
+            type: object
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          description: 数据总条数
+          example: 150
+        totalPages:
+          type: integer
+          description: 总页数
+          example: 8
+
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 40001
+        message:
+          type: string
+          example: "参数验证失败"
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+                example: email
+              message:
+                type: string
+                example: "邮箱格式不正确"
+
+    # 认证
+    RegisterRequest:
+      type: object
+      required: [username, email, password]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 30
+          pattern: '^[a-zA-Z0-9_-]+$'
+          example: johndoe
+        email:
+          type: string
+          format: email
+          example: john@example.com
+        password:
+          type: string
+          minLength: 8
+          maxLength: 72
+          description: 至少包含大小写字母和数字
+          example: "Secret123!"
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    AuthResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 0
+        message:
+          type: string
+          example: success
+        data:
+          type: object
+          properties:
+            user:
+              $ref: '#/components/schemas/UserSummary'
+            accessToken:
+              type: string
+              description: JWT 访问令牌（有效期 15 分钟）
+            refreshToken:
+              type: string
+              description: 刷新令牌（有效期 7 天）
+
+    # 用户
+    UserSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        username:
+          type: string
+          example: johndoe
+        avatar:
+          type: string
+          format: uri
+          nullable: true
+          example: "https://cdn.example.com/avatars/johndoe.jpg"
+        createdAt:
+          type: string
+          format: date-time
+
+    UserDetail:
+      allOf:
+        - $ref: '#/components/schemas/UserSummary'
+        - type: object
+          properties:
+            email:
+              type: string
+              format: email
+              description: 仅本人和管理员可见
+            bio:
+              type: string
+              maxLength: 500
+              nullable: true
+            postCount:
+              type: integer
+              example: 12
+            followerCount:
+              type: integer
+              example: 58
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 30
+        bio:
+          type: string
+          maxLength: 500
+        avatar:
+          type: string
+          format: uri
+
+    # 文章
+    PostSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 42
+        title:
+          type: string
+          example: "Node.js 入门指南"
+        status:
+          type: string
+          enum: [draft, published]
+        author:
+          $ref: '#/components/schemas/UserSummary'
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+        likeCount:
+          type: integer
+          example: 36
+        commentCount:
+          type: integer
+          example: 12
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PostDetail:
+      allOf:
+        - $ref: '#/components/schemas/PostSummary'
+        - type: object
+          properties:
+            content:
+              type: string
+              description: 文章正文（Markdown 格式）
+            viewCount:
+              type: integer
+              example: 1024
+
+    CreatePostRequest:
+      type: object
+      required: [title, content]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          example: "Node.js 入门指南"
+        content:
+          type: string
+          minLength: 1
+          description: 支持 Markdown 格式
+        tags:
+          type: array
+          items:
+            type: string
+          maxItems: 10
+          description: 标签名称列表，不存在时自动创建
+          example: ["node.js", "javascript"]
+        status:
+          type: string
+          enum: [draft, published]
+          default: draft
+
+    UpdatePostRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        content:
+          type: string
+          minLength: 1
+        tags:
+          type: array
+          items:
+            type: string
+          maxItems: 10
+        status:
+          type: string
+          enum: [draft, published]
+
+    # 评论
+    Comment:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 100
+        content:
+          type: string
+          example: "写得很好，感谢分享！"
+        author:
+          $ref: '#/components/schemas/UserSummary'
+        postId:
+          type: integer
+          example: 42
+        parentId:
+          type: integer
+          nullable: true
+          description: 父评论 ID，null 表示顶层评论
+          example: null
+        likeCount:
+          type: integer
+          example: 5
+        replies:
+          type: array
+          items:
+            $ref: '#/components/schemas/Comment'
+          description: 子评论列表（最多返回 3 条，更多通过独立接口获取）
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateCommentRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        parentId:
+          type: integer
+          nullable: true
+          description: 回复的父评论 ID，null 表示顶层评论
+
+    UpdateCommentRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 1000
+
+    # 标签
+    Tag:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 5
+        name:
+          type: string
+          example: "node.js"
+        slug:
+          type: string
+          description: URL 友好的标识符
+          example: "node-js"
+        postCount:
+          type: integer
+          description: 使用该标签的已发布文章数
+          example: 23
+
+    CreateTagRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          example: "node.js"
+
+    # 点赞
+    LikeStatus:
+      type: object
+      properties:
+        likeCount:
+          type: integer
+          description: 总点赞数
+          example: 37
+        liked:
+          type: boolean
+          description: 当前用户是否已点赞（未登录为 false）
+          example: true
+
+  # ── 认证方案 ──────────────────────────
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        通过 `/auth/login` 获取 `accessToken`，在请求头中携带：
+        `Authorization: Bearer <accessToken>`
