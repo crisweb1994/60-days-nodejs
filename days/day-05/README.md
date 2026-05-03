@@ -71,7 +71,7 @@ Timer 回调 → [清空 nextTick 队列] → [清空 Promise/queueMicrotask 队
 这是面试最高频的问题之一：
 
 ```javascript
-// 测试 1：在主模块中
+// 测试 1：在 CommonJS 主模块中（例如 node test.cjs 或默认未开启 type: module 的 .js）
 console.log('1. 同步代码');
 
 setTimeout(() => console.log('2. setTimeout'), 0);
@@ -81,14 +81,30 @@ Promise.resolve().then(() => console.log('5. Promise'));
 
 console.log('6. 同步代码');
 
-// 输出顺序（确定的）：
+// 输出顺序（在 CommonJS 顶层确定）：
 // 1. 同步代码
 // 6. 同步代码
-// 4. nextTick         ← 微任务，优先级最高
-// 5. Promise          ← 微任务
+// 4. nextTick         ← Node 的 nextTick 队列先清空
+// 5. Promise          ← V8 microtask 队列随后清空
 // 2. setTimeout       ← 可能在 setImmediate 前或后
 // 3. setImmediate     ← 可能在 setTimeout 前或后
 ```
+
+如果把同一段代码放在 ESM 顶层（例如 `node test.mjs`、`node --input-type=module`，
+或项目 `package.json` 中设置了 `"type": "module"`），`Promise` 会先于 `process.nextTick`：
+
+```javascript
+// ESM 顶层输出：
+// 1. 同步代码
+// 6. 同步代码
+// 5. Promise
+// 4. nextTick
+// 2. setTimeout       ← 可能在 setImmediate 前或后
+// 3. setImmediate     ← 可能在 setTimeout 前或后
+```
+
+这是因为 ESM 模块的顶层执行本身已经处在 microtask 处理流程中，Node 不会在当前
+Promise/queueMicrotask 队列排空前插队执行新注册的 `nextTick`。
 
 > ⚠️ 在主模块中，`setTimeout(fn, 0)` 和 `setImmediate` 的顺序不确定。
 > 但在 I/O 回调中，`setImmediate` **总是先于** `setTimeout`。
@@ -111,7 +127,7 @@ fs.readFile('./package.json', () => {
 
 ```
 同步代码
-→ microtask checkpoint：process.nextTick 通常先于 Promise.then / queueMicrotask
+→ microtask checkpoint：CommonJS 顶层和普通回调中，process.nextTick 通常先于 Promise.then / queueMicrotask
 → 事件循环阶段：timers / poll / check / close callbacks，具体顺序取决于所处阶段和调度位置
 ```
 
