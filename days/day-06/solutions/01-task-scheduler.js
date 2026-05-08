@@ -12,6 +12,7 @@ class TaskScheduler extends EventEmitter {
     this.queue = []; // { fn, priority, index }
     this.results = [];
     this.completed = 0;
+    this.running = 0;
     this.total = 0;
   }
 
@@ -55,27 +56,37 @@ class TaskScheduler extends EventEmitter {
   }
 
   async _runTask({ fn, index }) {
-    this.emit('taskStart', { index, running: 0 });
+    this.running++;
+    this.emit('taskStart', { index, running: this.running });
 
     try {
       const value = await fn();
       this.results[index] = { status: 'fulfilled', value };
-      this.completed++;
-      this.emit('taskComplete', {
-        index,
-        value,
-        completed: this.completed,
-        total: this.total,
-        percent: ((this.completed / this.total) * 100).toFixed(1),
-      });
     } catch (reason) {
       this.results[index] = { status: 'rejected', reason };
+    } finally {
       this.completed++;
+      this.running--;
+    }
+
+    const result = this.results[index];
+    const progress = {
+      index,
+      running: this.running,
+      completed: this.completed,
+      total: this.total,
+    };
+
+    if (result.status === 'fulfilled') {
+      this.emit('taskComplete', {
+        ...progress,
+        value: result.value,
+        percent: ((this.completed / this.total) * 100).toFixed(1),
+      });
+    } else {
       this.emit('taskError', {
-        index,
-        reason,
-        completed: this.completed,
-        total: this.total,
+        ...progress,
+        reason: result.reason,
       });
     }
   }
@@ -102,6 +113,9 @@ for (let i = 1; i <= 10; i++) {
 }
 
 scheduler.on('start', ({ total }) => console.log(`▶ 开始调度 ${total} 个任务（并发: 3）\n`));
+scheduler.on('taskStart', ({ index, running }) => {
+  console.log(`  🚀 任务 #${index + 1} 开始  当前运行: ${running}`);
+});
 scheduler.on('taskComplete', ({ index, percent }) => {
   console.log(`  ✅ 任务 #${index + 1} 完成  进度: ${percent}%`);
 });
