@@ -66,7 +66,10 @@ export class PostsService {
 
   update(id: number, dto: UpdatePostDto) {
     const post = this.findOne(id);
-    Object.assign(post, dto, { updatedAt: new Date() });
+    const changes = Object.fromEntries(
+      Object.entries(dto).filter(([, value]) => value !== undefined),
+    );
+    Object.assign(post, changes, { updatedAt: new Date() });
     return post;
   }
 
