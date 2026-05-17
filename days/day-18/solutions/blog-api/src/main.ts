@@ -1,7 +1,24 @@
 import 'reflect-metadata';
 import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { ValidationError } from 'class-validator';
 import { AppModule } from './app.module';
+
+interface FieldError {
+  field: string;
+  messages: string[];
+}
+
+function flattenErrors(errors: ValidationError[], parentPath = ''): FieldError[] {
+  return errors.flatMap((err) => {
+    const path = parentPath ? `${parentPath}.${err.property}` : err.property;
+    const own: FieldError[] = err.constraints
+      ? [{ field: path, messages: Object.values(err.constraints) }]
+      : [];
+    const children = err.children?.length ? flattenErrors(err.children, path) : [];
+    return [...own, ...children];
+  });
+}
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -13,20 +30,11 @@ async function bootstrap() {
       transform: true,
       transformOptions: { enableImplicitConversion: true },
       // 把校验失败转成结构化响应，便于前端按字段定位错误
-      exceptionFactory: (errors) => {
-        const formatted = errors.flatMap(function flatten(err, parentPath = ''): any[] {
-          const path = parentPath ? `${parentPath}.${err.property}` : err.property;
-          const own = err.constraints
-            ? [{ field: path, messages: Object.values(err.constraints) }]
-            : [];
-          const children = (err.children ?? []).flatMap((c) => flatten(c, path));
-          return [...own, ...children];
-        });
-        return new BadRequestException({
+      exceptionFactory: (errors) =>
+        new BadRequestException({
           code: 'VALIDATION_ERROR',
-          errors: formatted,
-        });
-      },
+          errors: flattenErrors(errors),
+        }),
     }),
   );
 
