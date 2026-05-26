@@ -1,0 +1,164 @@
+// ============================================================================
+// blog-prisma schema —— 映射 blog-db 的 7 张表
+// ----------------------------------------------------------------------------
+// 与裸 SQL 的关系：blog-db 的 SQL migrations 是 schema 真实来源；
+// 这个文件是手写映射，不通过 prisma migrate 反向管理 DB。
+//
+// 注释里标 ★ 的是 Prisma 写法关键点，初学先扫一遍。
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+  // 默认输出到 node_modules/.prisma/client/，不动它
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// User
+// ----------------------------------------------------------------------------
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String   @unique @db.VarChar(255)
+  username  String   @unique @db.VarChar(50)
+  password  String   @db.VarChar(255)
+  role      String   @default("user") @db.VarChar(20)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // 反向关联：不存物理列，用来从 user 查 posts/comments/likes/notifications
+  posts         Post[]
+  comments      Comment[]
+  likes         Like[]
+  notifications Notification[]
+
+  @@map("users")
+  // ★ @@map 让 Prisma 知道 PG 端的表名是 "users"（snake_case）
+  // ★ role 不做 enum——SQL 端用 VARCHAR + CHECK，Prisma enum 会改 DDL 出冲突
+}
+
+// ----------------------------------------------------------------------------
+// Post
+// ----------------------------------------------------------------------------
+model Post {
+  id          String    @id @default(uuid()) @db.Uuid
+  authorId    String    @map("author_id") @db.Uuid
+  slug        String    @unique @db.VarChar(120)
+  title       String    @db.VarChar(200)
+  content     String    @db.Text
+  status      String    @default("draft") @db.VarChar(20)
+  viewCount   Int       @default(0) @map("view_count")
+  likeCount   Int       @default(0) @map("like_count")
+  metadata    Json      @default("{}") @db.JsonB
+  publishedAt DateTime? @map("published_at") @db.Timestamptz()
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz()
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // 正向关联：authorId 是真实外键列
+  author   User      @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  tags     PostTag[]
+  comments Comment[]
+  likes    Like[]
+
+  @@map("posts")
+  // ★ 看不到 CHECK 约束：posts_published_requires_timestamp 在 PG 端
+  //   仍然生效，Prisma 写入违反时 PG 会抛错（Prisma 透传）
+  // ★ likeCount 反范式：触发器在 PG 维护，Prisma 端只读不写
+}
+
+// ----------------------------------------------------------------------------
+// Tag
+// ----------------------------------------------------------------------------
+model Tag {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(50)
+  slug        String   @unique @db.VarChar(50)
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  posts PostTag[]
+
+  @@map("tags")
+}
+
+// ----------------------------------------------------------------------------
+// PostTag —— 显式中间表（N:M）
+// ★ 不用 Prisma 隐式中间表语法，原因见 day-25 README §5
+// ----------------------------------------------------------------------------
+model PostTag {
+  postId    String   @map("post_id") @db.Uuid
+  tagId     String   @map("tag_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([postId, tagId])
+  @@map("post_tags")
+  // ★ @@id 复合主键，Prisma 自动当 PK + UNIQUE
+}
+
+// ----------------------------------------------------------------------------
+// Comment —— 自引用邻接表
+// ----------------------------------------------------------------------------
+model Comment {
+  id        String    @id @default(uuid()) @db.Uuid
+  postId    String    @map("post_id") @db.Uuid
+  parentId  String?   @map("parent_id") @db.Uuid
+  authorId  String    @map("author_id") @db.Uuid
+  content   String    @db.Text
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz()
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+  post   Post   @relation(fields: [postId],   references: [id], onDelete: Cascade)
+  author User   @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  // 自引用：parent 是父评论，replies 是反向（这条评论的直接子评论）
+  parent  Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: SetNull)
+  replies Comment[] @relation("CommentReplies")
+
+  @@map("comments")
+  // ★ 自引用必须给 @relation 起 name ("CommentReplies")，否则 Prisma 不知道
+  //   parent 和 replies 是同一组关联
+}
+
+// ----------------------------------------------------------------------------
+// Like —— N:M (user × post) + 复合主键
+// ----------------------------------------------------------------------------
+model Like {
+  userId    String   @map("user_id") @db.Uuid
+  postId    String   @map("post_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@id([userId, postId])
+  @@map("likes")
+  // ★ likes 没有独立 id 列，复合主键即 UNIQUE 即索引
+  // ★ posts.like_count 由 PG 触发器自动维护，Prisma 这边写完后再 fetch 能看到
+}
+
+// ----------------------------------------------------------------------------
+// Notification —— 异质事件 + JSONB
+// ----------------------------------------------------------------------------
+model Notification {
+  id          String    @id @default(uuid()) @db.Uuid
+  recipientId String    @map("recipient_id") @db.Uuid
+  type        String    @db.VarChar(40)
+  payload     Json      @default("{}") @db.JsonB
+  readAt      DateTime? @map("read_at") @db.Timestamptz()
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+
+  recipient User @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId, createdAt])
+  @@map("notifications")
+  // ★ 部分索引（WHERE read_at IS NULL）Prisma 表达不出，PG 端已建
+  // ★ payload 类型是 Prisma.JsonValue，用前要二次校验
+}

@@ -1,0 +1,27 @@
+{
+  "name": "blog-prisma",
+  "version": "0.1.0",
+  "description": "Day 25 - Prisma 独立 playground，对接 blog-db 的同一个 PG 实例",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prisma:generate": "prisma generate",
+    "prisma:pull": "prisma db pull",
+    "prisma:studio": "prisma studio",
+    "demo:basics": "tsx src/01_basics.ts",
+    "demo:relations": "tsx src/02_relations.ts",
+    "demo:aggregates": "tsx src/03_aggregates.ts",
+    "demo:raw": "tsx src/04_raw.ts",
+    "demo:real": "tsx src/05_real_queries.ts",
+    "demo:all": "pnpm demo:basics && pnpm demo:relations && pnpm demo:aggregates && pnpm demo:raw && pnpm demo:real"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "prisma": "^5.22.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}
