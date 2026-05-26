@@ -1,6 +1,6 @@
-# blog-db — Day 21 / 22 / 23 参考实现
+# blog-db — Day 21 / 22 / 23 / 24 参考实现
 
-Day 21 搭好的 schema 和测试数据，Day 22 追加 JOIN / 聚合 / 子查询练习，Day 23 追加索引、`EXPLAIN`、窗口函数。Docker 起 PostgreSQL 16，按文件顺序应用 migration，灌入 seed，所有练习直接在 psql 里跑。
+Day 21 搭好的 schema 和测试数据，Day 22 追加 JOIN / 聚合 / 子查询，Day 23 追加索引、`EXPLAIN`、窗口函数，Day 24 把 schema 扩展到生产形态（评论树、点赞 + 反范式计数、通知）。Docker 起 PostgreSQL 16，按文件顺序应用 migration，灌入 seed，所有练习直接在 psql 里跑。
 
 ## 目录结构
 
@@ -14,8 +14,11 @@ blog-db/
 │   ├── 003_posts.sql
 │   ├── 004_tags.sql
 │   ├── 005_post_tags.sql
-│   └── 006_indexes.sql                # Day 23：业务相关的索引集合
-├── seed.sql                    # 3 用户 / 5 标签 / 10 文章 / 11 标签关联
+│   ├── 006_indexes.sql                # Day 23：业务相关的索引集合
+│   ├── 007_comments.sql               # Day 24：评论（邻接表 + 自引用）
+│   ├── 008_likes.sql                  # Day 24：点赞 + 反范式 like_count + 触发器
+│   └── 009_notifications.sql          # Day 24：通知（type + JSONB payload）
+├── seed.sql                    # 3 用户 / 5 标签 / 10 文章 / 11 标签关联 + 评论树 + 点赞 + 通知
 ├── seed_large.sql              # Day 23 用：再补 47 用户 + ~10w 文章 + ~30w 标签关联
 ├── scripts/
 │   ├── migrate.sh              # 跑 migrations
@@ -30,7 +33,9 @@ blog-db/
     ├── 06_subqueries.sql        # Day 22：标量/相关/EXISTS/CTE
     ├── 07_explain.sql           # Day 23：EXPLAIN ANALYZE / BUFFERS / JOIN 算法
     ├── 08_indexes.sql           # Day 23：联合/部分/表达式/GIN 索引
-    └── 09_window.sql            # Day 23：窗口函数全家桶
+    ├── 09_window.sql            # Day 23：窗口函数全家桶
+    ├── 10_comments_tree.sql     # Day 24：递归 CTE 遍历评论树
+    └── 11_likes.sql             # Day 24：点赞 + 计数列同步 + 对账
 ```
 
 ## 快速开始
@@ -119,7 +124,8 @@ PG 13 之前需要 `pgcrypto`；migration 001 已经 `CREATE EXTENSION IF NOT EX
 ```bash
 # 1. 表数量
 docker exec -it pg-blog psql -U blog -d blog -c "\dt"
-# 应有 4 张表：users / posts / tags / post_tags
+# Day 21 期望：4 张（users / posts / tags / post_tags）
+# Day 24 后期望：7 张（追加 comments / likes / notifications）
 
 # 2. seed 数据数量
 docker exec -it pg-blog psql -U blog -d blog -c \

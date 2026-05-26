@@ -12,7 +12,11 @@
 BEGIN;
 
 -- 清空再重建（注意顺序：从子表到父表）
-TRUNCATE TABLE post_tags, posts, tags, users RESTART IDENTITY CASCADE;
+-- Day 24 新加 comments / likes / notifications，用 CASCADE 一次清掉
+TRUNCATE TABLE
+  notifications, likes, comments,
+  post_tags, posts, tags, users
+RESTART IDENTITY CASCADE;
 
 -- ----------------------------------------------------------------------------
 -- 用户
@@ -147,12 +151,121 @@ INSERT INTO post_tags (post_id, tag_id) VALUES
   ('b0000000-0000-0000-0000-000000000007', 'aaaaaaaa-0000-0000-0000-000000000001');
   -- 注意：archived 的两篇文章和部分 draft 故意不打标签
 
+-- ----------------------------------------------------------------------------
+-- 评论（Day 24）：构造一棵 3 层深的回复树，覆盖：
+--   - 顶层评论
+--   - 一层回复
+--   - 二层回复
+--   - 软删除占位（保留树结构）
+--   - 不同文章上的评论（验证 post_id 过滤）
+-- ----------------------------------------------------------------------------
+INSERT INTO comments (id, post_id, parent_id, author_id, content, deleted_at) VALUES
+  -- hello-postgres 文章下的对话
+  ('c0000000-0000-0000-0000-000000000001',
+   'b0000000-0000-0000-0000-000000000001', NULL,
+   '33333333-3333-3333-3333-333333333333',
+   '配图清晰，期待后续 EXPLAIN 章节',                          NULL),
+
+  ('c0000000-0000-0000-0000-000000000002',
+   'b0000000-0000-0000-0000-000000000001',
+   'c0000000-0000-0000-0000-000000000001',
+   '22222222-2222-2222-2222-222222222222',
+   '谢谢 bob，下篇就讲',                                      NULL),
+
+  ('c0000000-0000-0000-0000-000000000003',
+   'b0000000-0000-0000-0000-000000000001',
+   'c0000000-0000-0000-0000-000000000002',
+   '33333333-3333-3333-3333-333333333333',
+   '催更',                                                    NULL),
+
+  ('c0000000-0000-0000-0000-000000000004',
+   'b0000000-0000-0000-0000-000000000001', NULL,
+   '11111111-1111-1111-1111-111111111111',
+   '这里本来是骂战，已经删了',
+   now() - interval '1 day'),                                -- 软删除
+
+  ('c0000000-0000-0000-0000-000000000005',
+   'b0000000-0000-0000-0000-000000000001',
+   'c0000000-0000-0000-0000-000000000004',
+   '22222222-2222-2222-2222-222222222222',
+   '上面那条已删，但我的回复还在（验证 SET NULL 行为）',     NULL),
+
+  -- nest-modules 文章下：单条无回复
+  ('c0000000-0000-0000-0000-000000000010',
+   'b0000000-0000-0000-0000-000000000002', NULL,
+   '33333333-3333-3333-3333-333333333333',
+   '依赖注入那段还能再展开讲讲',                              NULL);
+
+-- ----------------------------------------------------------------------------
+-- 点赞（Day 24）：触发器会自动维护 posts.like_count
+--   alice 给 bob 的两篇都点赞
+--   bob 给 alice 的 hello-postgres / sql-vs-orm 点赞
+--   admin 给 hello-postgres 点赞
+-- ----------------------------------------------------------------------------
+INSERT INTO likes (user_id, post_id) VALUES
+  -- hello-postgres
+  ('33333333-3333-3333-3333-333333333333', 'b0000000-0000-0000-0000-000000000001'),
+  ('11111111-1111-1111-1111-111111111111', 'b0000000-0000-0000-0000-000000000001'),
+  -- sql-vs-orm
+  ('33333333-3333-3333-3333-333333333333', 'b0000000-0000-0000-0000-000000000005'),
+  -- docker-compose-101
+  ('22222222-2222-2222-2222-222222222222', 'b0000000-0000-0000-0000-000000000006'),
+  -- k8s-graceful-shutdown
+  ('22222222-2222-2222-2222-222222222222', 'b0000000-0000-0000-0000-000000000007'),
+  ('11111111-1111-1111-1111-111111111111', 'b0000000-0000-0000-0000-000000000007');
+
+-- ----------------------------------------------------------------------------
+-- 通知（Day 24）：异质事件示例
+--   - alice 收到点赞通知（已读）
+--   - alice 收到评论通知（未读）
+--   - bob 收到点赞通知（未读）
+-- ----------------------------------------------------------------------------
+INSERT INTO notifications (recipient_id, type, payload, read_at) VALUES
+  ('22222222-2222-2222-2222-222222222222', 'post_liked',
+   jsonb_build_object(
+     'post_id',     'b0000000-0000-0000-0000-000000000001',
+     'post_title',  '你好 PostgreSQL',
+     'liker_id',    '33333333-3333-3333-3333-333333333333',
+     'liker_name',  'bob'),
+   now() - interval '2 hours'),
+
+  ('22222222-2222-2222-2222-222222222222', 'comment_replied',
+   jsonb_build_object(
+     'post_id',     'b0000000-0000-0000-0000-000000000001',
+     'comment_id',  'c0000000-0000-0000-0000-000000000003',
+     'parent_id',   'c0000000-0000-0000-0000-000000000002',
+     'snippet',     '催更',
+     'from_user_id', '33333333-3333-3333-3333-333333333333',
+     'from_user_name', 'bob'),
+   NULL),                                            -- 未读
+
+  ('33333333-3333-3333-3333-333333333333', 'post_liked',
+   jsonb_build_object(
+     'post_id',     'b0000000-0000-0000-0000-000000000006',
+     'post_title',  'docker-compose 实用 10 条',
+     'liker_id',    '22222222-2222-2222-2222-222222222222',
+     'liker_name',  'alice'),
+   NULL);                                            -- 未读
+
 COMMIT;
 
 -- ----------------------------------------------------------------------------
 -- 自检
 -- ----------------------------------------------------------------------------
-SELECT 'users'     AS table_name, count(*) FROM users
-UNION ALL SELECT 'tags',     count(*) FROM tags
-UNION ALL SELECT 'posts',    count(*) FROM posts
-UNION ALL SELECT 'post_tags', count(*) FROM post_tags;
+SELECT 'users'         AS table_name, count(*) FROM users
+UNION ALL SELECT 'tags',          count(*) FROM tags
+UNION ALL SELECT 'posts',         count(*) FROM posts
+UNION ALL SELECT 'post_tags',     count(*) FROM post_tags
+UNION ALL SELECT 'comments',      count(*) FROM comments
+UNION ALL SELECT 'likes',         count(*) FROM likes
+UNION ALL SELECT 'notifications', count(*) FROM notifications;
+
+-- 触发器自检：likes 6 行 → posts.like_count 总和也应为 6
+SELECT
+  (SELECT count(*) FROM likes)                    AS likes_total,
+  (SELECT sum(like_count) FROM posts)             AS like_count_sum,
+  CASE WHEN (SELECT count(*) FROM likes)
+            = (SELECT sum(like_count) FROM posts)
+       THEN '✅ in-sync'
+       ELSE '❌ DRIFT'
+  END AS sync_check;
