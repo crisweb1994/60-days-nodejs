@@ -13,7 +13,11 @@
     "demo:aggregates": "tsx src/03_aggregates.ts",
     "demo:raw": "tsx src/04_raw.ts",
     "demo:real": "tsx src/05_real_queries.ts",
-    "demo:all": "pnpm demo:basics && pnpm demo:relations && pnpm demo:aggregates && pnpm demo:raw && pnpm demo:real"
+    "demo:transactions": "tsx src/06_transactions.ts",
+    "demo:n-plus-1": "tsx src/07_n_plus_1.ts",
+    "demo:extensions": "tsx src/08_extensions.ts",
+    "demo:perf": "tsx src/09_perf.ts",
+    "demo:all": "pnpm demo:basics && pnpm demo:relations && pnpm demo:aggregates && pnpm demo:raw && pnpm demo:real && pnpm demo:transactions && pnpm demo:n-plus-1 && pnpm demo:extensions && pnpm demo:perf"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0"

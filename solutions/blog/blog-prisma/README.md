@@ -1,6 +1,6 @@
 # blog-prisma — Day 25 / 26 参考实现
 
-Prisma 独立 playground，连接 `../blog-db` 起的同一个 PG 实例。Day 27 才会把 Prisma 集成到 NestJS 的 blog-api 里，今天先在最小环境里把 API 用顺。
+Prisma 独立 playground，连接 `../blog-db` 起的同一个 PG 实例。Day 25 打通基础 CRUD / 关联 / 聚合 / raw SQL，Day 26 补事务、N+1、Client Extensions、性能。Day 27 才会把 Prisma 集成到 NestJS 的 blog-api 里。
 
 ## 前置
 
@@ -26,13 +26,20 @@ pnpm prisma generate          # 从 schema.prisma 生成 Client
 每个文件都可以独立运行：
 
 ```bash
-pnpm demo:basics      # 01_basics.ts   findUnique / findMany / create / update / delete
-pnpm demo:relations   # 02_relations.ts include vs select / connect / connectOrCreate
-pnpm demo:aggregates  # 03_aggregates.ts count / _count / groupBy / having
-pnpm demo:raw         # 04_raw.ts      $queryRaw / $executeRaw / 类型化
-pnpm demo:real        # 05_real_queries.ts 真实业务查询 + Prisma 边界
+# Day 25
+pnpm demo:basics         # 01_basics.ts        findUnique / findMany / create / update / delete
+pnpm demo:relations      # 02_relations.ts     include vs select / connect / connectOrCreate
+pnpm demo:aggregates     # 03_aggregates.ts    count / _count / groupBy / having
+pnpm demo:raw            # 04_raw.ts           $queryRaw / $executeRaw / 类型化
+pnpm demo:real           # 05_real_queries.ts  真实业务查询 + Prisma 边界
 
-pnpm demo:all         # 全跑一遍
+# Day 26
+pnpm demo:transactions   # 06_transactions.ts  数组 / callback / 隔离级别 / 行锁 / 死锁
+pnpm demo:n-plus-1       # 07_n_plus_1.ts      N+1 演示 + 三种修法 + SQL 计数
+pnpm demo:extensions     # 08_extensions.ts    model/query/result/client 扩展 + 软删
+pnpm demo:perf           # 09_perf.ts          createMany / 并发 / 慢查询
+
+pnpm demo:all            # 全跑一遍
 ```
 
 或者打开 Prisma Studio 浏览数据：
@@ -51,11 +58,15 @@ blog-prisma/
 ├── prisma/
 │   └── schema.prisma         # 手写映射 blog-db 的 7 张表
 └── src/
-    ├── 01_basics.ts
-    ├── 02_relations.ts
-    ├── 03_aggregates.ts
-    ├── 04_raw.ts
-    └── 05_real_queries.ts
+    ├── 01_basics.ts          # Day 25
+    ├── 02_relations.ts       # Day 25
+    ├── 03_aggregates.ts      # Day 25
+    ├── 04_raw.ts             # Day 25
+    ├── 05_real_queries.ts    # Day 25
+    ├── 06_transactions.ts    # Day 26
+    ├── 07_n_plus_1.ts        # Day 26
+    ├── 08_extensions.ts      # Day 26
+    └── 09_perf.ts            # Day 26
 ```
 
 ## 设计取舍
