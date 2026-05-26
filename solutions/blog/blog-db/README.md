@@ -1,6 +1,6 @@
-# blog-db — Day 21 / 22 参考实现
+# blog-db — Day 21 / 22 / 23 参考实现
 
-Day 21 搭好的 schema 和测试数据，Day 22 在 `queries/` 下追加 JOIN / 聚合 / 子查询练习。Docker 起 PostgreSQL 16，按文件顺序应用 migration，灌入 seed，所有练习直接在 psql 里跑。
+Day 21 搭好的 schema 和测试数据，Day 22 追加 JOIN / 聚合 / 子查询练习，Day 23 追加索引、`EXPLAIN`、窗口函数。Docker 起 PostgreSQL 16，按文件顺序应用 migration，灌入 seed，所有练习直接在 psql 里跑。
 
 ## 目录结构
 
@@ -13,11 +13,13 @@ blog-db/
 │   ├── 002_users.sql
 │   ├── 003_posts.sql
 │   ├── 004_tags.sql
-│   └── 005_post_tags.sql
+│   ├── 005_post_tags.sql
+│   └── 006_indexes.sql                # Day 23：业务相关的索引集合
 ├── seed.sql                    # 3 用户 / 5 标签 / 10 文章 / 11 标签关联
+├── seed_large.sql              # Day 23 用：再补 47 用户 + ~10w 文章 + ~30w 标签关联
 ├── scripts/
 │   ├── migrate.sh              # 跑 migrations
-│   ├── seed.sh                 # 重灌 seed（会 TRUNCATE）
+│   ├── seed.sh                 # 重灌 seed（--large 同时跑大数据集）
 │   └── reset.sh                # 销毁卷重建（危险，本地用）
 └── queries/                    # 练习 SQL
     ├── 01_basics.sql            # Day 21：SELECT / WHERE / 简单过滤
@@ -25,7 +27,10 @@ blog-db/
     ├── 03_null_and_explain.sql  # Day 21：NULL 陷阱与 EXPLAIN 入门
     ├── 04_joins.sql             # Day 22：INNER/LEFT/反连接/自连接
     ├── 05_aggregates.sql        # Day 22：count/GROUP BY/HAVING/FILTER
-    └── 06_subqueries.sql        # Day 22：标量/相关/EXISTS/CTE
+    ├── 06_subqueries.sql        # Day 22：标量/相关/EXISTS/CTE
+    ├── 07_explain.sql           # Day 23：EXPLAIN ANALYZE / BUFFERS / JOIN 算法
+    ├── 08_indexes.sql           # Day 23：联合/部分/表达式/GIN 索引
+    └── 09_window.sql            # Day 23：窗口函数全家桶
 ```
 
 ## 快速开始
@@ -69,7 +74,8 @@ docker exec -it pg-blog psql -U blog -d blog -f /tmp/01_basics.sql
 只清空业务数据、保留 schema：
 
 ```bash
-./scripts/seed.sh    # seed.sql 头部带 TRUNCATE
+./scripts/seed.sh                # 小数据：3 用户 / 10 文章
+./scripts/seed.sh --large        # 小数据 + 10w 文章，Day 23 的 EXPLAIN 才看得出区别
 ```
 
 连容器和卷都炸掉、从零重建：
