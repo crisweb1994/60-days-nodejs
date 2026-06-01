@@ -15,6 +15,7 @@ import {
 import { BusinessExceptionFilter } from '../common/filters/business-exception.filter';
 import { CreatePostDto } from './dto/create-post.dto';
 import { QueryPostDto } from './dto/query-post.dto';
+import { SearchPostDto } from './dto/search-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { PostsService } from './posts.service';
 
@@ -28,6 +29,19 @@ export class PostsController {
   @Get()
   findAll(@Query() query: QueryPostDto) {
     return this.posts.findAll(query);
+  }
+
+  // Day 28：游标分页。和下面的 search / debug 一样，静态路径必须放在 :id 前面，
+  // 否则 'feed' 会被当成 :id 交给 ParseUUIDPipe → 400。
+  @Get('feed')
+  feed(@Query() query: QueryPostDto) {
+    return this.posts.feed(query);
+  }
+
+  // Day 28：全文搜索
+  @Get('search')
+  search(@Query() query: SearchPostDto) {
+    return this.posts.search(query);
   }
 
   // 故意放在 :id 前面，避免 'debug' 被 ParseUUIDPipe 当成参数尝试解析

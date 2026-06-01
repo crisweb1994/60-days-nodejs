@@ -1,8 +1,10 @@
 import { HttpStatus, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { ErrorCodes } from '../common/constants/error-codes';
 import { BusinessException } from '../common/exceptions/business.exception';
+import { decodeCursor } from './cursor';
 import { CreatePostDto } from './dto/create-post.dto';
 import { QueryPostDto } from './dto/query-post.dto';
+import { SearchPostDto } from './dto/search-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import {
   POSTS_REPOSITORY,
@@ -22,6 +24,42 @@ export class PostsService {
       pagination: {
         page: query.page ?? 1,
         limit: query.limit ?? 20,
+        total,
+      },
+    };
+  }
+
+  // 游标分页（GET /posts/feed）：解码游标 → 查 keyset → 回 nextCursor。
+  async feed(query: QueryPostDto) {
+    const cursor = query.cursor ? decodeCursor(query.cursor) : null;
+    // 传了 cursor 却解不出来 → 不是"第一页"，是非法输入，直接 400（别静默当第一页）
+    if (query.cursor && !cursor) {
+      throw new BusinessException(
+        ErrorCodes.VALIDATION_ERROR,
+        'cursor 参数非法',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    const { items, nextCursor } = await this.repo.findByCursor(query, cursor);
+    return {
+      items,
+      // 游标分页不返回 total / page：要么算不准、要么代价高，且客户端也用不上
+      pageInfo: {
+        nextCursor,
+        hasMore: nextCursor !== null,
+        limit: query.limit ?? 20,
+      },
+    };
+  }
+
+  // 全文搜索（GET /posts/search）：按相关度排序，offset 分页（搜索很少深翻）。
+  async search(dto: SearchPostDto) {
+    const { items, total } = await this.repo.search(dto);
+    return {
+      items,
+      pagination: {
+        page: dto.page ?? 1,
+        limit: dto.limit ?? 20,
         total,
       },
     };

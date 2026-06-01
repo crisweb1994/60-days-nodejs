@@ -1,6 +1,6 @@
-# Blog API — Day 20 里程碑 → Day 27 接入 PostgreSQL
+# Blog API — Day 20 里程碑 → Day 27 接入 PostgreSQL → Day 28 分页/搜索
 
-Day 16–19 的知识点整合成一个能跑、能交接、能在切 PostgreSQL 时不返工的完整项目（Day 20 里程碑）。**Day 27 兑现了当初的承诺**：把内存仓储换成 Prisma + PostgreSQL，Service / Controller / DTO / Filter 一行未改——见下方「Day 27 更新」。
+Day 16–19 的知识点整合成一个能跑、能交接、能在切 PostgreSQL 时不返工的完整项目（Day 20 里程碑）。**Day 27 兑现了当初的承诺**：把内存仓储换成 Prisma + PostgreSQL，Service / Controller / DTO / Filter 一行未改——见下方「Day 27 更新」。**Day 28** 给列表加 cursor 分页和全文搜索——见「Day 28 更新」。
 
 ## Day 27 更新：接入 PostgreSQL + Prisma
 
@@ -13,6 +13,18 @@ Day 20 留了个伏笔——所有 Repository 方法都返回 `Promise`，Servic
 
 与 `blog-prisma` 的分工：`blog-prisma` 是 Day 25/26 的独立 playground（`db pull` 映射 blog-db 的 7 张表）；`blog-api` 这里是把 Prisma 当作 **schema 的唯一真相**，用 `prisma migrate` 建自己的 `posts` 表（独立 `blog_api` schema），两者复用同一个 PG 实例但互不干扰。
 
+## Day 28 更新：分页 / 搜索 / 排序
+
+在 Day 27 的 Prisma 基础上，给列表加三种访问方式（`GET /posts` 不变，新增两条）：
+
+- `GET /posts`：**offset 分页**（沿用），能跳页 + 给总数，适合后台表格
+- `GET /posts/feed`：**cursor / keyset 分页**，稳定不漂移、深翻不掉速，适合信息流
+- `GET /posts/search`：**全文搜索**，`$queryRaw` + `websearch_to_tsquery` + `ts_rank` 相关度排序
+
+配套：`PostsRepository` 接口加 `findByCursor` / `search`（Prisma 与 InMemory 两个实现都补齐）；`src/posts/cursor.ts` 做不透明游标编解码；可选的搜索索引放在 `prisma/sql/001_search_indexes.sql`（表达式 / trigram 索引 Prisma 的 schema 表达不了，独立于 `migrate` 管理）。
+
+详细讲解见 [Day 28 README](../../../days/day-28/)。
+
 ## 涵盖今日产出
 
 - [x] 目录按 `common / config / feature / health` 重组
@@ -22,14 +34,15 @@ Day 20 留了个伏笔——所有 Repository 方法都返回 `Promise`，Servic
 - [x] `requestId` 在响应头 / 响应体 / 日志三处一致
 - [x] `/health` 端点 + `enableShutdownHooks`
 - [x] `QueryPostDto` 支持分页 / 排序 / 关键字 / 状态过滤，`limit` 有上限（最大 100）
-- [x] E2E 覆盖 6 类验收场景 + 分页/查询/health/UUID 校验（Day 20 时 12 个，Day 27 接入 Prisma 后增至 15 个，另加 9 个单元测试）全绿
+- [x] E2E + 单元测试全绿（用例数随天数增长：Day 20 时 12 个 E2E → Day 27 增至 15 → Day 28 增至 21 个 E2E，外加 15 个单元测试）
 
 ## 目录结构
 
 ```
 prisma/
 ├── schema.prisma                        # Day 27：单 Post 模型，migrate 管理
-└── migrations/                          # Day 27：初始建表 SQL（提交到版本库）
+├── migrations/                          # Day 27：初始建表 SQL（提交到版本库）
+└── sql/001_search_indexes.sql           # Day 28：FTS / trigram 索引（手动应用，见下）
 src/
 ├── main.ts                              # 只做装配：bootstrap / CORS / shutdown
 ├── app.module.ts                        # 装配 Config / Common / Health / Posts
@@ -58,19 +71,21 @@ src/
 │   ├── health.module.ts
 │   └── health.controller.ts             # GET /health
 └── posts/
-    ├── posts.module.ts                  # POSTS_REPOSITORY token → PrismaPostsRepository（Day 27）
-    ├── posts.controller.ts              # 用 ParseUUIDPipe 校验路径参数
-    ├── posts.service.ts                 # 业务规则，全部 async
+    ├── posts.module.ts                  # POSTS_REPOSITORY token → PrismaPostsRepository
+    ├── posts.controller.ts              # /posts(offset) + /posts/feed(cursor) + /posts/search(FTS)
+    ├── posts.service.ts                 # 业务规则：findAll / feed / search / CRUD
+    ├── cursor.ts                        # Day 28：游标 encode/decode（base64url，不透明 token）
     ├── dto/
     │   ├── create-post.dto.ts
     │   ├── update-post.dto.ts           # PartialType(CreatePostDto)
-    │   ├── query-post.dto.ts            # page/limit/sortBy/order/keyword/tag/status
+    │   ├── query-post.dto.ts            # page/limit/sortBy/order/keyword/tag/status/cursor
+    │   ├── search-post.dto.ts           # Day 28：全文搜索参数 q/page/limit/status
     │   └── post-meta.dto.ts
     ├── entities/post.entity.ts          # 领域实体 id: string (UUID v4)
     └── repositories/
-        ├── posts.repository.ts          # interface + Symbol token
-        ├── in-memory-posts.repository.ts  # Day 20：内存实现（保留，可一行切回）
-        └── prisma-posts.repository.ts     # Day 27：Prisma 实现 + 领域↔DB 映射
+        ├── posts.repository.ts          # interface + Symbol token（含 findByCursor/search）
+        ├── in-memory-posts.repository.ts  # 内存实现（保留，可一行切回；含游标 + 朴素搜索）
+        └── prisma-posts.repository.ts     # Prisma 实现：映射 + keyset 分页 + FTS($queryRaw)
 ```
 
 ## 运行
@@ -111,7 +126,9 @@ pnpm test                           # 两层都跑（需要 PG）
 | Method | Path | 说明 | 成功状态码 |
 |--------|------|------|-----------|
 | GET    | `/health` | 健康检查（不进访问日志） | 200 |
-| GET    | `/posts` | 列表 + 分页 + 过滤 | 200 |
+| GET    | `/posts` | 列表 + offset 分页 + 过滤 | 200 |
+| GET    | `/posts/feed` | 列表 + cursor 分页（信息流） | 200 |
+| GET    | `/posts/search` | 全文搜索（相关度排序） | 200 |
 | GET    | `/posts/:id` | 按 UUID 查单条 | 200 |
 | POST   | `/posts` | 创建文章 | 201 |
 | PATCH  | `/posts/:id` | 局部更新 | 200 |
@@ -126,9 +143,32 @@ pnpm test                           # 两层都跑（需要 PG）
 | `limit` | int | 20 | 1–100 |
 | `sortBy` | enum | `createdAt` | `createdAt` / `updatedAt` / `title` |
 | `order` | enum | `desc` | `asc` / `desc` |
-| `keyword` | string | — | 长度 ≤ 100，匹配 `title` / `content`（不区分大小写） |
+| `keyword` | string | — | 长度 ≤ 100，匹配 `title` / `content`（不区分大小写，ILIKE） |
 | `tag` | string | — | 精确匹配 |
 | `status` | enum | — | `draft` / `published` / `archived` |
+
+### `GET /posts/feed` 查询参数（cursor 分页）
+
+| 参数 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `limit` | int | 20 | 1–100，每页条数 |
+| `cursor` | string | — | 上一页返回的 `nextCursor`；第一页不传 |
+| `sortBy` | enum | `createdAt` | `createdAt` / `updatedAt` / `title` |
+| `order` | enum | `desc` | `asc` / `desc` |
+| `keyword` / `tag` / `status` | — | — | 同 `/posts` |
+
+响应 `data` 形如 `{ items, pageInfo: { nextCursor, hasMore, limit } }`（注意是 `pageInfo` 不是 `pagination`）。`nextCursor` 为 `null` 表示到底了。非法 `cursor` → 400 `VALIDATION_ERROR`。
+
+### `GET /posts/search` 查询参数（全文搜索）
+
+| 参数 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `q` | string | **必填** | 搜索词，1–100，按 `websearch_to_tsquery` 解析 |
+| `page` | int | 1 | ≥ 1 |
+| `limit` | int | 20 | 1–100 |
+| `status` | enum | — | `draft` / `published` / `archived` |
+
+按 `ts_rank` 相关度降序返回。响应 `data` 形如 `{ items, pagination: { page, limit, total } }`。`q` 缺失 → 400。
 
 ### `POST /posts` 请求体
 
@@ -209,7 +249,21 @@ curl -i http://localhost:3000/posts/debug/boom
 # 10) limit 上限
 curl -i 'http://localhost:3000/posts?limit=99999'
 # 400 + VALIDATION_ERROR
+
+# 11) 游标分页：第一页 → 拿 nextCursor → 翻下一页（Day 28）
+C=$(curl -s 'http://localhost:3000/posts/feed?limit=2&sortBy=title&order=asc' | jq -r '.data.pageInfo.nextCursor')
+curl -s "http://localhost:3000/posts/feed?limit=2&sortBy=title&order=asc&cursor=$C" | jq '.data'
+
+# 12) 全文搜索（Day 28）
+curl -s 'http://localhost:3000/posts/search?q=nestjs' | jq '.data.items[].title'
 ```
+
+> **可选：搜索索引**（数据量大才需要，教学数据不建也能跑）。表达式 / trigram 索引 Prisma schema 表达不了，独立用 psql 应用：
+>
+> ```bash
+> psql "postgresql://blog:blog_dev_pwd@localhost:5432/blog" \
+>   -c "SET search_path TO blog_api;" -f prisma/sql/001_search_indexes.sql
+> ```
 
 ## 设计要点回顾
 

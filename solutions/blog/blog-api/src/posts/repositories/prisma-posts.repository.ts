@@ -3,9 +3,11 @@ import { Prisma, type Post as PrismaPost } from '@prisma/client';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { BusinessException } from '../../common/exceptions/business.exception';
 import { PrismaService } from '../../prisma/prisma.service';
+import { encodeCursor, type CursorPayload } from '../cursor';
 import type { QueryPostDto } from '../dto/query-post.dto';
+import type { SearchPostDto } from '../dto/search-post.dto';
 import type { Post, PostMeta, PostStatus } from '../entities/post.entity';
-import type { PostsRepository } from './posts.repository';
+import type { CursorResult, PostsRepository } from './posts.repository';
 
 /**
  * Prisma 版仓储。它做且只做一件事：把 Prisma 的行（PrismaPost）翻译成领域实体（Post），
@@ -58,6 +60,35 @@ export class PrismaPostsRepository implements PostsRepository {
     );
   }
 
+  // 列表 / 游标都用得到的过滤条件：keyword(ILIKE) + status + tag。抽出来给两个分页方法共用。
+  private baseWhere(query: {
+    keyword?: string;
+    status?: PostStatus;
+    tag?: string;
+  }): Prisma.PostWhereInput {
+    const where: Prisma.PostWhereInput = {};
+    if (query.keyword) {
+      // 关键字匹配 title 或 content，不区分大小写（PG ILIKE）
+      where.OR = [
+        { title: { contains: query.keyword, mode: 'insensitive' } },
+        { content: { contains: query.keyword, mode: 'insensitive' } },
+      ];
+    }
+    if (query.status) where.status = query.status;
+    // tags 是数组列：has 等价于 SQL 的 'tag' = ANY(tags)
+    if (query.tag) where.tags = { has: query.tag };
+    return where;
+  }
+
+  // 从一行生成游标：排序字段值（日期→ISO，title→原文）+ id
+  private cursorOf(row: PrismaPost, sortBy: string): string {
+    const v =
+      sortBy === 'title'
+        ? row.title
+        : (row[sortBy as 'createdAt' | 'updatedAt'] as Date).toISOString();
+    return encodeCursor({ v, id: row.id });
+  }
+
   async create(
     data: Omit<Post, 'id' | 'createdAt' | 'updatedAt'>,
   ): Promise<Post> {
@@ -103,18 +134,8 @@ export class PrismaPostsRepository implements PostsRepository {
     const sortBy = query.sortBy ?? 'createdAt';
     const order = query.order ?? 'desc';
 
-    // 把 DTO 翻译成 Prisma 的 where——内存版那套 .filter() 在这里变成下推到 PG 的条件
-    const where: Prisma.PostWhereInput = {};
-    if (query.keyword) {
-      // 关键字匹配 title 或 content，不区分大小写（PG ILIKE）
-      where.OR = [
-        { title: { contains: query.keyword, mode: 'insensitive' } },
-        { content: { contains: query.keyword, mode: 'insensitive' } },
-      ];
-    }
-    if (query.status) where.status = query.status;
-    // tags 是数组列：has 等价于 SQL 的 'tag' = ANY(tags)
-    if (query.tag) where.tags = { has: query.tag };
+    // 把 DTO 翻译成 Prisma 的 where——keyword(ILIKE) / status / tag，下推到 PG
+    const where = this.baseWhere(query);
 
     // ★ count 和 findMany 包进 $transaction 数组（Day 26）：两条查询在同一个事务、
     //   一次往返里执行。但注意没传 isolationLevel，默认是 Read Committed——
@@ -137,6 +158,98 @@ export class PrismaPostsRepository implements PostsRepository {
       this.prisma.post.count({ where }),
     ]);
 
+    return { items: rows.map((r) => this.toDomain(r)), total };
+  }
+
+  async findByCursor(
+    query: QueryPostDto,
+    cursor: CursorPayload | null,
+  ): Promise<CursorResult> {
+    const limit = query.limit ?? 20;
+    const sortBy = query.sortBy ?? 'createdAt';
+    const order = query.order ?? 'desc';
+    // desc 想要"排在游标后面"= 比游标更小的行；asc 则是更大的行
+    const op = order === 'asc' ? 'gt' : 'lt';
+
+    const where = this.baseWhere(query);
+
+    if (cursor) {
+      // keyset：WHERE (sortBy, id) 在游标"之后"。复合比较 Prisma 没有直接算子，
+      // 拆成等价的两支 OR：  sortBy <op> v   OR   (sortBy = v AND id <op> cursorId)
+      // 计算键用 unknown 断言：动态 key 的字面量类型和 PostWhereInput 对不上，但语义正确。
+      const v = sortBy === 'title' ? cursor.v : new Date(cursor.v);
+      const keyset: Prisma.PostWhereInput = {
+        OR: [
+          { [sortBy]: { [op]: v } } as unknown as Prisma.PostWhereInput,
+          {
+            [sortBy]: v,
+            id: { [op]: cursor.id },
+          } as unknown as Prisma.PostWhereInput,
+        ],
+      };
+      // 和 keyword 的 OR 共存：放进 AND，避免两个顶层 OR 互相覆盖
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), keyset];
+    }
+
+    // 多取一条：用来判断"还有没有下一页"，这一条不返回给客户端
+    const rows = await this.prisma.post.findMany({
+      where,
+      orderBy: [
+        { [sortBy]: order } as Prisma.PostOrderByWithRelationInput,
+        { id: order }, // 次级键方向要和主键一致，keyset 才自洽
+      ],
+      take: limit + 1,
+    });
+
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const nextCursor =
+      hasMore && page.length > 0
+        ? this.cursorOf(page[page.length - 1], sortBy)
+        : null;
+
+    return { items: page.map((r) => this.toDomain(r)), nextCursor };
+  }
+
+  async search(
+    query: SearchPostDto,
+  ): Promise<{ items: Post[]; total: number }> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const offset = (page - 1) * limit;
+
+    // status 是可选过滤：用 Prisma.sql 安全拼接（参数化，不是字符串拼接，无注入风险）
+    const statusFilter = query.status
+      ? Prisma.sql`AND status = ${query.status}`
+      : Prisma.empty;
+
+    // websearch_to_tsquery：按"搜索引擎语法"解析用户输入（支持 "短语"、or、-排除），
+    //   且对乱输入容错——比 to_tsquery 安全（后者遇到裸空格 / 符号会直接抛错）。
+    // 'simple' 配置：不做词干、不去停用词，结果可预期（换 'english' 能获得词干归并）。
+    // count(*) OVER()：窗口函数，一条查询同时拿到总命中数，省一次 count 往返（呼应 Day 23）。
+    // 列别名 "createdAt"/"updatedAt"：让 raw 行形状对齐 PrismaPost，复用 toDomain。
+    const rows = await this.prisma.$queryRaw<
+      Array<PrismaPost & { total: bigint }>
+    >`
+      SELECT id, title, slug, content, tags, status, meta,
+             created_at AS "createdAt",
+             updated_at AS "updatedAt",
+             count(*) OVER() AS total
+      FROM posts
+      WHERE to_tsvector('simple', title || ' ' || content)
+            @@ websearch_to_tsquery('simple', ${query.q})
+            ${statusFilter}
+      ORDER BY ts_rank(
+                 to_tsvector('simple', title || ' ' || content),
+                 websearch_to_tsquery('simple', ${query.q})
+               ) DESC,
+               created_at DESC,
+               id DESC                                   -- 唯一兜底键：rank+时间都打平时仍稳定，offset 翻页不重不漏
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+
+    // count(*) OVER() 是 bigint，转成 number；空结果集时没有行可取，总数 0
+    const total = rows.length > 0 ? Number(rows[0].total) : 0;
     return { items: rows.map((r) => this.toDomain(r)), total };
   }
 

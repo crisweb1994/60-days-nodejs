@@ -39,4 +39,11 @@ export class QueryPostDto {
   @IsOptional()
   @IsEnum(POST_STATUSES)
   status?: PostStatus;
+
+  // Day 28：游标分页用的不透明 token。offset 模式（GET /posts）忽略它；
+  // 游标模式（GET /posts/feed）用它定位"上一页最后一条"。长度设上限防超长输入。
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  cursor?: string;
 }

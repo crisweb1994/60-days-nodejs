@@ -211,3 +211,91 @@ test('非法 UUID 路径参数 → 400（ParseUUIDPipe）', async () => {
   const r = await req('GET', '/posts/not-a-uuid');
   assert.equal(r.status, 400);
 });
+
+// ─── Day 28：游标分页 ───────────────────────────────────────
+
+test('feed：按 title 升序逐页推进，页间不重不漏', async () => {
+  // 用 title 排序（字符串，无时间戳精度问题），断言顺序确定
+  for (const t of ['a', 'b', 'c', 'd', 'e']) {
+    await req('POST', '/posts', validPost({ slug: `p-${t}`, title: t }));
+  }
+
+  // 第一页
+  const p1 = await req('GET', '/posts/feed?limit=2&sortBy=title&order=asc');
+  assert.equal(p1.status, 200);
+  assert.deepEqual(p1.json.data.items.map((i: any) => i.title), ['a', 'b']);
+  assert.equal(p1.json.data.pageInfo.hasMore, true);
+  assert.ok(p1.json.data.pageInfo.nextCursor);
+
+  // 第二页：带上 nextCursor
+  const c1 = encodeURIComponent(p1.json.data.pageInfo.nextCursor);
+  const p2 = await req('GET', `/posts/feed?limit=2&sortBy=title&order=asc&cursor=${c1}`);
+  assert.deepEqual(p2.json.data.items.map((i: any) => i.title), ['c', 'd']);
+  assert.equal(p2.json.data.pageInfo.hasMore, true);
+
+  // 第三页：最后一条，hasMore=false / nextCursor=null
+  const c2 = encodeURIComponent(p2.json.data.pageInfo.nextCursor);
+  const p3 = await req('GET', `/posts/feed?limit=2&sortBy=title&order=asc&cursor=${c2}`);
+  assert.deepEqual(p3.json.data.items.map((i: any) => i.title), ['e']);
+  assert.equal(p3.json.data.pageInfo.hasMore, false);
+  assert.equal(p3.json.data.pageInfo.nextCursor, null);
+});
+
+test('feed：非法 cursor → 400 VALIDATION_ERROR', async () => {
+  const r = await req('GET', '/posts/feed?cursor=not-a-valid-cursor');
+  assert.equal(r.status, 400);
+  assert.equal(r.json.code, 'VALIDATION_ERROR');
+});
+
+test('feed：默认按 createdAt 倒序翻页，跨页 id 不重不漏', async () => {
+  for (const t of ['x1', 'x2', 'x3']) {
+    await req('POST', '/posts', validPost({ slug: t, title: t }));
+  }
+  // 默认 sortBy=createdAt order=desc —— created_at 是 Timestamptz(3)，游标无精度丢失
+  const p1 = await req('GET', '/posts/feed?limit=2');
+  assert.equal(p1.status, 200);
+  assert.equal(p1.json.data.items.length, 2);
+  assert.equal(p1.json.data.pageInfo.hasMore, true);
+
+  const c = encodeURIComponent(p1.json.data.pageInfo.nextCursor);
+  const p2 = await req('GET', `/posts/feed?limit=2&cursor=${c}`);
+  assert.equal(p2.json.data.items.length, 1);
+  assert.equal(p2.json.data.pageInfo.hasMore, false);
+
+  // 两页合起来正好 3 条、互不重复（不重不漏）
+  const seen = [...p1.json.data.items, ...p2.json.data.items].map((i: any) => i.id);
+  assert.equal(new Set(seen).size, 3);
+});
+
+// ─── Day 28：全文搜索 ───────────────────────────────────────
+
+test('search：命中正文里的词，非命中项不返回', async () => {
+  await req('POST', '/posts', validPost({
+    slug: 's1',
+    title: 'PostgreSQL full text search',
+    content: 'tsvector and tsquery make ranking possible',
+  }));
+  await req('POST', '/posts', validPost({
+    slug: 's2',
+    title: 'Redis caching basics',
+    content: 'nothing relevant to the other topic here at all',
+  }));
+
+  const r = await req('GET', '/posts/search?q=tsvector');
+  assert.equal(r.status, 200);
+  assert.equal(r.json.data.items.length, 1);
+  assert.equal(r.json.data.items[0].slug, 's1');
+  assert.equal(r.json.data.pagination.total, 1);
+});
+
+test('search：q 缺失 → 400 VALIDATION_ERROR', async () => {
+  const r = await req('GET', '/posts/search');
+  assert.equal(r.status, 400);
+  assert.equal(r.json.code, 'VALIDATION_ERROR');
+});
+
+test('search：q 全是空白 → 400（trim 后空串被 MinLength 拒）', async () => {
+  const r = await req('GET', '/posts/search?q=%20%20%20');
+  assert.equal(r.status, 400);
+  assert.equal(r.json.code, 'VALIDATION_ERROR');
+});

@@ -38,6 +38,8 @@ function mockRepo(over: Partial<PostsRepository> = {}): PostsRepository {
     findById: async () => null,
     findBySlug: async () => null,
     findMany: async () => ({ items: [], total: 0 }),
+    findByCursor: async () => ({ items: [], nextCursor: null }),
+    search: async () => ({ items: [], total: 0 }),
     update: async (_id, patch) => fakePost(patch as Partial<Post>),
     remove: async () => true,
     ...over,
@@ -172,4 +174,43 @@ test('remove：仓储返回 true → { deleted: true, id }', async () => {
   const service = new PostsService(mockRepo({ remove: async () => true }));
   const r = await service.remove('some-id');
   assert.deepEqual(r, { deleted: true, id: 'some-id' });
+});
+
+// ─── feed（游标分页）─────────────────────────────────────────────────
+
+test('feed：cursor 非法 → 抛 VALIDATION_ERROR（不静默当第一页）', async () => {
+  const service = new PostsService(mockRepo());
+  await expectBizError(
+    () => service.feed({ cursor: '!!!not-a-valid-cursor!!!' } as any),
+    'VALIDATION_ERROR',
+  );
+});
+
+test('feed：nextCursor 透传，hasMore 据其推导', async () => {
+  const more = new PostsService(
+    mockRepo({ findByCursor: async () => ({ items: [], nextCursor: 'abc' }) }),
+  );
+  const r1 = await more.feed({ limit: 10 } as any);
+  assert.equal(r1.pageInfo.nextCursor, 'abc');
+  assert.equal(r1.pageInfo.hasMore, true);
+  assert.equal(r1.pageInfo.limit, 10);
+
+  const done = new PostsService(
+    mockRepo({ findByCursor: async () => ({ items: [], nextCursor: null }) }),
+  );
+  const r2 = await done.feed({} as any);
+  assert.equal(r2.pageInfo.nextCursor, null);
+  assert.equal(r2.pageInfo.hasMore, false);
+});
+
+// ─── search（全文搜索）───────────────────────────────────────────────
+
+test('search：仓储的 total 透传到 pagination', async () => {
+  const service = new PostsService(
+    mockRepo({ search: async () => ({ items: [], total: 42 }) }),
+  );
+  const r = await service.search({ q: 'hello', page: 2, limit: 5 } as any);
+  assert.equal(r.pagination.total, 42);
+  assert.equal(r.pagination.page, 2);
+  assert.equal(r.pagination.limit, 5);
 });

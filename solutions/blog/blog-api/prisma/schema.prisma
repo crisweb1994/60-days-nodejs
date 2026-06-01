@@ -47,8 +47,11 @@ model Post {
   //   读出来类型是 Prisma.JsonValue，进业务前最好二次校验（见 Day 26 §JSON 警告）
   meta Json? @db.JsonB
 
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+  // ★ Timestamptz(3) = 毫秒精度。Day 28 起 /posts/feed 默认按 createdAt 做游标分页，
+  //   而 JS Date 只有毫秒精度。把列也定成毫秒，PG 存的、Prisma 读的、游标编的三者
+  //   完全一致，游标 keyset 不会因为微秒被截断而漏行（详见 Day 28 README §6）。
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   // ★ 列表接口最常见的排序是"按状态过滤 + 按时间倒序"，给它一个联合索引
   @@index([status, createdAt])
