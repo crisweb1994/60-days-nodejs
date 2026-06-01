@@ -6,6 +6,9 @@ export default function configuration(env: Env) {
   return {
     env: env.NODE_ENV,
     port: env.PORT,
+    database: {
+      url: env.DATABASE_URL,
+    },
     cors: {
       origin: env.CORS_ORIGIN.split(',')
         .map((s) => s.trim())

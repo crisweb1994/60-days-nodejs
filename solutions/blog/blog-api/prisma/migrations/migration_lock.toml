@@ -1,0 +1,3 @@
+# 这个文件告诉 Prisma 这套 migration 是给哪种数据库生成的。
+# 请勿手改，也请提交到版本库。
+provider = "postgresql"

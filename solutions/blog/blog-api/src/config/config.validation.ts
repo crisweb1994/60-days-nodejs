@@ -8,6 +8,14 @@ export const envSchema = z.object({
   // 多个域名用逗号分隔；空值留给开发期自己改 .env
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
   PAGE_LIMIT: z.coerce.number().int().min(1).max(100).default(20),
+  // Day 27：数据库连接串。必填——没有它 Prisma 连不上，应该启动即崩而不是首个请求才崩。
+  // PrismaClient 会自己从 process.env.DATABASE_URL 读，这里加进 schema 只为 fail-fast 校验。
+  DATABASE_URL: z
+    .string()
+    .min(1)
+    .refine((v) => v.startsWith('postgres'), {
+      message: 'DATABASE_URL 必须是 postgresql:// 连接串',
+    }),
 });
 
 export type Env = z.infer<typeof envSchema>;

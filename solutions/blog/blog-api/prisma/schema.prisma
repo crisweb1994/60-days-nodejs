@@ -1,0 +1,56 @@
+// ============================================================================
+// blog-api schema —— Day 27：把内存版 blog-api 接到真 PostgreSQL
+// ----------------------------------------------------------------------------
+// 与 blog-prisma 的关键区别：
+//   - blog-prisma：手写 schema 映射 blog-db 的 SQL 表，db pull，不跑 migrate
+//     （SQL 是真相，Prisma 只是查询客户端）
+//   - blog-api（这里）：Prisma 是 schema 的"唯一真相"，用 prisma migrate 建表
+//     （应用自己拥有数据模型，没有外部 SQL 迁移）
+//
+// 因为 blog-api 现在只管 Post 这一个聚合（用户 / 鉴权要等阶段三 Day 31+），
+// 所以这里只建一张 posts 表，且字段严格对齐领域实体 src/posts/entities/post.entity.ts：
+// 这样 Service / Controller / DTO / 测试一行都不用改。
+//
+// 注释里标 ★ 的是值得记住的写法关键点。
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  // ★ 复用 blog-db 起的同一个 PG 实例，但用独立的 schema=blog_api，
+  //   和 blog-db 的 public schema（那套 7 张表）物理隔离，互不干扰。
+}
+
+// ----------------------------------------------------------------------------
+// Post —— 对齐领域实体，不多不少
+// ----------------------------------------------------------------------------
+model Post {
+  // ★ uuid() 默认生成 v4，正好配合 Controller 的 ParseUUIDPipe({ version: '4' })
+  id      String @id @default(uuid()) @db.Uuid
+  title   String @db.VarChar(200)
+  slug    String @unique @db.VarChar(120)
+  content String @db.Text
+
+  // ★ PG 原生数组 text[]：领域里 tags 就是 string[]，不必单开一张标签表。
+  //   查询用 { tags: { has: 'nestjs' } } → SQL 的 'nestjs' = ANY(tags)
+  tags String[] @default([])
+
+  // ★ status 用 VarChar 不用 Prisma enum：和 blog-db 的取舍一致——
+  //   enum 改起来要改 DDL，VarChar + 应用层 DTO 白名单（draft/published/archived）更灵活
+  status String @default("draft") @db.VarChar(20)
+
+  // ★ 可空 JSONB 存 SEO meta（seoTitle / seoDescription）。
+  //   读出来类型是 Prisma.JsonValue，进业务前最好二次校验（见 Day 26 §JSON 警告）
+  meta Json? @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // ★ 列表接口最常见的排序是"按状态过滤 + 按时间倒序"，给它一个联合索引
+  @@index([status, createdAt])
+  @@map("posts")
+}

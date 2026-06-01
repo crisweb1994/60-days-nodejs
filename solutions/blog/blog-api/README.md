@@ -1,6 +1,17 @@
-# Day 20 Solution — Blog API（无数据库版 · 里程碑）
+# Blog API — Day 20 里程碑 → Day 27 接入 PostgreSQL
 
-Day 16–19 的知识点整合成一个能跑、能交接、能在 Day 21 切 PostgreSQL 时不返工的完整项目。
+Day 16–19 的知识点整合成一个能跑、能交接、能在切 PostgreSQL 时不返工的完整项目（Day 20 里程碑）。**Day 27 兑现了当初的承诺**：把内存仓储换成 Prisma + PostgreSQL，Service / Controller / DTO / Filter 一行未改——见下方「Day 27 更新」。
+
+## Day 27 更新：接入 PostgreSQL + Prisma
+
+Day 20 留了个伏笔——所有 Repository 方法都返回 `Promise`，Service 只依赖 `PostsRepository` 接口。Day 27 把这个伏笔兑现：
+
+- 新增 `PrismaService`（`extends PrismaClient implements OnModuleInit / OnModuleDestroy`）+ 全局 `PrismaModule`
+- 新增 `PrismaPostsRepository implements PostsRepository`：负责领域实体 ↔ DB 行的映射（防腐层）
+- `posts.module.ts` 把 `POSTS_REPOSITORY` 的 `useClass` 从 `InMemoryPostsRepository` 换成 `PrismaPostsRepository`——**只动这一行**
+- 测试拆成两层：`posts.service.unit.test.ts`（mock 仓储，不连库）+ `posts.e2e.test.ts`（真 PG）
+
+与 `blog-prisma` 的分工：`blog-prisma` 是 Day 25/26 的独立 playground（`db pull` 映射 blog-db 的 7 张表）；`blog-api` 这里是把 Prisma 当作 **schema 的唯一真相**，用 `prisma migrate` 建自己的 `posts` 表（独立 `blog_api` schema），两者复用同一个 PG 实例但互不干扰。
 
 ## 涵盖今日产出
 
@@ -11,14 +22,20 @@ Day 16–19 的知识点整合成一个能跑、能交接、能在 Day 21 切 Po
 - [x] `requestId` 在响应头 / 响应体 / 日志三处一致
 - [x] `/health` 端点 + `enableShutdownHooks`
 - [x] `QueryPostDto` 支持分页 / 排序 / 关键字 / 状态过滤，`limit` 有上限（最大 100）
-- [x] E2E 覆盖 6 类验收场景 + 分页/查询/health/UUID 校验，共 12 个用例全绿
+- [x] E2E 覆盖 6 类验收场景 + 分页/查询/health/UUID 校验（Day 20 时 12 个，Day 27 接入 Prisma 后增至 15 个，另加 9 个单元测试）全绿
 
 ## 目录结构
 
 ```
+prisma/
+├── schema.prisma                        # Day 27：单 Post 模型，migrate 管理
+└── migrations/                          # Day 27：初始建表 SQL（提交到版本库）
 src/
 ├── main.ts                              # 只做装配：bootstrap / CORS / shutdown
 ├── app.module.ts                        # 装配 Config / Common / Health / Posts
+├── prisma/                              # Day 27：数据库基础设施
+│   ├── prisma.module.ts                 # @Global，导出 PrismaService
+│   └── prisma.service.ts                # extends PrismaClient + 生命周期钩子
 ├── common/                              # 横切关注点，不依赖任何 feature
 │   ├── common.module.ts                 # @Global 注册 APP_PIPE / APP_INTERCEPTOR(×2) / APP_FILTER + middleware
 │   ├── constants/error-codes.ts         # 错误码常量表
@@ -41,7 +58,7 @@ src/
 │   ├── health.module.ts
 │   └── health.controller.ts             # GET /health
 └── posts/
-    ├── posts.module.ts                  # POSTS_REPOSITORY token 绑定 InMemory 实现
+    ├── posts.module.ts                  # POSTS_REPOSITORY token → PrismaPostsRepository（Day 27）
     ├── posts.controller.ts              # 用 ParseUUIDPipe 校验路径参数
     ├── posts.service.ts                 # 业务规则，全部 async
     ├── dto/
@@ -49,22 +66,43 @@ src/
     │   ├── update-post.dto.ts           # PartialType(CreatePostDto)
     │   ├── query-post.dto.ts            # page/limit/sortBy/order/keyword/tag/status
     │   └── post-meta.dto.ts
-    ├── entities/post.entity.ts          # id: string (UUID v4)
+    ├── entities/post.entity.ts          # 领域实体 id: string (UUID v4)
     └── repositories/
         ├── posts.repository.ts          # interface + Symbol token
-        └── in-memory-posts.repository.ts
+        ├── in-memory-posts.repository.ts  # Day 20：内存实现（保留，可一行切回）
+        └── prisma-posts.repository.ts     # Day 27：Prisma 实现 + 领域↔DB 映射
 ```
 
 ## 运行
 
+前置：`blog-db` 的 PostgreSQL 要先起来（Day 21）：
+
+```bash
+cd ../blog-db && docker compose up -d && cd -
+```
+
+然后：
+
 ```bash
 pnpm install
-cp .env.example .env                # 按需修改
+cp .env.example .env                # 默认连 blog-db 的 PG，schema=blog_api
+
+pnpm prisma:generate                # 从 schema.prisma 生成 Prisma Client
+pnpm prisma:migrate                 # 建 blog_api schema + posts 表（首次需要）
 
 pnpm start:dev                      # http://localhost:3000
-pnpm test                           # 12 个 E2E 用例
 pnpm build                          # 输出到 dist/
 ```
+
+### 测试（两层）
+
+```bash
+pnpm test:unit                      # 单元测试：mock 仓储，不连库，毫秒级
+pnpm test:e2e                       # 集成测试：起真 PG，跑整条 HTTP→DB 链路
+pnpm test                           # 两层都跑（需要 PG）
+```
+
+> ⚠️ `pnpm test:e2e` 每个用例前会 `deleteMany()` 清空 `posts` 表。请让 `DATABASE_URL` 指向一次性的库/schema（如 `blog_api` 或专门的 `blog_api_test`），**别指向有数据的库**。
 
 ## 接口列表
 
@@ -185,12 +223,14 @@ curl -i 'http://localhost:3000/posts?limit=99999'
 - **`enableShutdownHooks`**：容器化部署的最低要求，否则 k8s 滚动更新会切断请求 + 泄漏连接。
 - **zod env 校验**：缺/错环境变量在 `pnpm start` 第一秒就崩，而不是请求进来才崩。
 
-## 通向 Day 21
+## Day 27 兑现回顾
 
-Day 21 接入 PostgreSQL 时，预期只需：
+Day 20 当初的预期，Day 27 逐条对照：
 
-1. 新建 `posts/repositories/prisma-posts.repository.ts implements PostsRepository`
-2. `posts.module.ts` 的 `{ provide: POSTS_REPOSITORY, useClass: InMemoryPostsRepository }` 改成 `useClass: PrismaPostsRepository`
-3. 本目录下 12 个 E2E 用例**一行不改**重新跑，全绿
+1. ✅ 新建 `posts/repositories/prisma-posts.repository.ts implements PostsRepository`
+2. ✅ `posts.module.ts` 的 `useClass: InMemoryPostsRepository` 改成 `useClass: PrismaPostsRepository`——只动这一行
+3. ✅ Service / Controller / DTO / Filter **一行未改**，验收场景全部沿用
 
-如果届时需要改 Service / Controller / DTO / Filter，那就是今天的抽象漏了。
+唯一"多出来"的工作不在抽象漏了，而在**两个本就不同的世界之间做映射**：领域实体的 `meta?: PostMeta`（具名对象）↔ DB 的 `JSONB`、`status` 联合类型 ↔ DB 的 `VARCHAR`。这部分逻辑全部收在 `PrismaPostsRepository` 一个文件里，正是 Repository 模式想要的效果。
+
+详细讲解见 [Day 27 README](../../../days/day-27/)。
