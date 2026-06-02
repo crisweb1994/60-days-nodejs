@@ -22,7 +22,11 @@
   },
   "pnpm": {
     "//": "pnpm 默认拦截依赖的构建脚本；放行 prisma 引擎下载，配合上面的 postinstall 让 pnpm install 后自动 prisma generate",
-    "onlyBuiltDependencies": ["prisma", "@prisma/client", "@prisma/engines"]
+    "onlyBuiltDependencies": [
+      "prisma",
+      "@prisma/client",
+      "@prisma/engines"
+    ]
   },
   "dependencies": {
     "@nestjs/common": "^10.4.0",
@@ -30,6 +34,7 @@
     "@nestjs/core": "^10.4.0",
     "@nestjs/mapped-types": "^2.0.5",
     "@nestjs/platform-express": "^10.4.0",
+    "@nestjs/swagger": "^7.4.2",
     "@prisma/client": "^5.22.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",

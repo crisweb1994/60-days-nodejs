@@ -1,4 +1,6 @@
-# Blog API — Day 20 里程碑 → Day 27 接入 PostgreSQL → Day 28 分页/搜索 → Day 29 并发控制
+# Blog API — NestJS + Prisma + PostgreSQL（阶段二里程碑 v1.0）
+
+> 演进路线：Day 20 内存版里程碑 → Day 27 接入 PostgreSQL → Day 28 分页/搜索 → Day 29 并发控制 → **Day 30 OpenAPI 文档 + 封版 v1.0**。各天细节见下方对应小节与 `days/` 下的 README。
 
 Day 16–19 的知识点整合成一个能跑、能交接、能在切 PostgreSQL 时不返工的完整项目（Day 20 里程碑）。**Day 27 兑现了当初的承诺**：把内存仓储换成 Prisma + PostgreSQL，Service / Controller / DTO / Filter 一行未改——见下方「Day 27 更新」。**Day 28** 给列表加 cursor 分页和全文搜索——见「Day 28 更新」。
 
@@ -39,6 +41,18 @@ Day 20 留了个伏笔——所有 Repository 方法都返回 `Promise`，Servic
 
 详细讲解见 [Day 29 README](../../../days/day-29/)。
 
+## Day 30 更新：OpenAPI 文档 + 封版 v1.0
+
+阶段二里程碑。不加新业务，给整套 API 配一份可交互、跟代码走的文档：
+
+- 接入 `@nestjs/swagger`：`main.ts` 装配 → `GET /docs`（Swagger UI）、`GET /docs-json`（OpenAPI spec）
+- 所有请求 DTO 加 `@ApiProperty`；query DTO 自动渲染成查询参数；`UpdatePostDto` 改用 `@nestjs/swagger` 的 `PartialType`（保留 @ApiProperty 继承）
+- `common/decorators/api-envelope.decorator.ts`：`@ApiEnvelope` / `@ApiErrorEnvelope`——用 `$ref` 把**统一响应外壳 + data 模型**拼出来，让文档如实反映 `TransformInterceptor` 包的那层
+- `posts/dto/post-response.dto.ts`：文档专用响应模型（与领域 `Post` 接口分离）
+- `debug/boom` 用 `@ApiExcludeEndpoint()` 从文档隐藏
+
+详细讲解见 [Day 30 README](../../../days/day-30/)。
+
 ## 涵盖今日产出
 
 - [x] 目录按 `common / config / feature / health` 重组
@@ -66,7 +80,9 @@ src/
 ├── common/                              # 横切关注点，不依赖任何 feature
 │   ├── common.module.ts                 # @Global 注册 APP_PIPE / APP_INTERCEPTOR(×2) / APP_FILTER + middleware
 │   ├── constants/error-codes.ts         # 错误码常量表
-│   ├── decorators/request-id.decorator.ts
+│   ├── decorators/
+│   │   ├── request-id.decorator.ts
+│   │   └── api-envelope.decorator.ts    # Day 30：@ApiEnvelope / @ApiErrorEnvelope（文档化响应外壳）
 │   ├── exceptions/business.exception.ts
 │   ├── filters/
 │   │   ├── all-exceptions.filter.ts     # 全局兜底
@@ -94,7 +110,8 @@ src/
     │   ├── update-post.dto.ts           # PartialType(CreatePostDto)
     │   ├── query-post.dto.ts            # page/limit/sortBy/order/keyword/tag/status/cursor
     │   ├── search-post.dto.ts           # Day 28：全文搜索参数 q/page/limit/status
-    │   └── post-meta.dto.ts
+    │   ├── post-meta.dto.ts
+    │   └── post-response.dto.ts         # Day 30：OpenAPI 响应模型（文档专用，与领域 Post 分离）
     ├── entities/post.entity.ts          # 领域实体 id: string (UUID v4)
     └── repositories/
         ├── posts.repository.ts          # interface + Symbol token（含 findByCursor/search）
@@ -120,6 +137,7 @@ pnpm prisma:generate                # 从 schema.prisma 生成 Prisma Client
 pnpm prisma:migrate                 # 建 blog_api schema + posts 表（首次需要）
 
 pnpm start:dev                      # http://localhost:3000
+#   API 文档：http://localhost:3000/docs（UI）  /docs-json（OpenAPI spec）
 pnpm build                          # 输出到 dist/
 ```
 
@@ -136,6 +154,8 @@ pnpm test                           # 两层都跑（需要 PG）
 ## 接口列表
 
 所有接口都返回统一外壳。成功 `{ code: 0, data, message: "ok", requestId, timestamp }`，失败 `{ code, data: null, message, errors?, category?, path, requestId, timestamp }`。
+
+> 完整可交互文档见 `GET /docs`（Swagger UI），原始 OpenAPI spec 见 `GET /docs-json`。下表是速查。
 
 | Method | Path | 说明 | 成功状态码 |
 |--------|------|------|-----------|
