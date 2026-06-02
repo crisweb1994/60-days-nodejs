@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <strong>🚧 WIP：</strong> 当前已完整整理 Day 1-20（含阶段二 NestJS 博客 API 里程碑），Day 21-60 正在持续补充详细讲解、练习与参考答案。
+  <strong>🚧 WIP：</strong> 当前已完整整理 <strong>Day 1-30</strong>（阶段一 + 阶段二全部，含 NestJS + Prisma + PostgreSQL 博客 API v1.0 里程碑、可运行参考实现），Day 31-60 正在持续补充详细讲解、练习与参考答案。
 </p>
 
 <p align="center">
@@ -39,7 +39,7 @@
 
 这个仓库的目标是：**用 60 天时间，帮助有前端基础的工程师系统掌握 Node.js 全栈开发**，从核心原理到生产部署，逐步建立完整的全栈知识体系和项目交付能力。
 
-> 当前状态说明：仓库目前优先完成了 **Day 1-20** 的详细内容（阶段一全部完成 + 阶段二 NestJS 入门到博客 API 里程碑）；**Day 21-60** 已建立路线图与每日页面骨架，详细正文、练习模板与参考答案会继续迭代补充。
+> 当前状态说明：仓库已完整完成 **Day 1-30**——**阶段一**（Node.js 核心，Day 1-15）+ **阶段二**（后端框架与数据库，Day 16-30）全部正文、练习与可运行参考实现，博客 API 已封版到 **v1.0**（NestJS + Prisma + PostgreSQL，含分页/搜索/并发控制/OpenAPI 文档）。**Day 31-60** 已建立路线图与每日页面骨架，详细正文、练习模板与参考答案会继续迭代补充。
 
 ### 这个仓库有什么特点？
 
@@ -95,7 +95,7 @@ cd days/day-01
 - 按天推进，共 60 天完成完整学习闭环
 - 每天投入 3 到 4 小时，兼顾系统学习与动手实践
 - 建议按顺序学习，避免跳过阶段性里程碑
-- 当前建议优先完成 Day 1-20，后续天数可结合路线图、推荐资源和你自己的练习持续推进
+- Day 1-30 已有完整正文与可运行参考实现，建议按顺序学完；Day 31 起可结合路线图、推荐资源和你自己的练习持续推进
 
 ### 学习建议
 
@@ -215,13 +215,13 @@ cd days/day-01
 
 ## 项目实战
 
-本教程围绕三个渐进式项目展开。当前仓库优先提供学习路线与每日文档，项目代码与脚手架会随更新进度逐步补充。
+本教程围绕三个渐进式项目展开。博客系统（Day 16-30 部分）已有完整可运行的参考实现，见 [`solutions/blog/`](./solutions/blog/)；其余项目代码与脚手架会随更新进度逐步补充。
 
 ### 1. 🟢 迷你 TODO API（Day 8-10）
 用原生 Node.js 构建，不使用任何框架，理解底层原理。
 
 ### 2. 🔵 博客系统（Day 16-40）
-用 NestJS + PostgreSQL + Redis 构建，覆盖后端核心技能。
+用 NestJS + PostgreSQL + Redis 构建，覆盖后端核心技能。**Day 16-30 已完成并封版 v1.0**（`solutions/blog/`：`blog-db` 裸 SQL、`blog-prisma` Prisma playground、`blog-api` 生产级 API，含分页/搜索/并发控制/Swagger 文档）；Day 31-40 的认证、缓存、队列待补。
 
 ### 3. 🔴 SaaS 任务管理平台（Day 46-55）
 全栈项目，用 Next.js + NestJS/tRPC + PostgreSQL + Redis + Docker 构建，作为阶段性综合实战目标。
@@ -257,7 +257,11 @@ cd days/day-01
 │   │   └── solutions/          # 部分天数会提供参考答案
 │   ├── day-02/
 │   └── ...                     # Day 03 ~ Day 60
-├── projects/                   # 里程碑项目代码预留目录，内容持续补充
+├── solutions/                  # 里程碑参考实现（可运行）
+│   └── blog/                   # 博客系统（Day 16-30）
+│       ├── blog-db/            # 裸 SQL：Docker PG + migrations + 练习
+│       ├── blog-prisma/        # Prisma playground（Day 25-26）
+│       └── blog-api/           # 生产级 NestJS API v1.0（Day 27-30）
 ├── cheatsheets/                # 速查手册
 │   ├── sql-cheatsheet.md
 │   ├── docker-cheatsheet.md
