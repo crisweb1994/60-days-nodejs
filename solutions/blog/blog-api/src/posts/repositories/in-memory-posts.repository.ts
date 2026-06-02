@@ -1,7 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { ErrorCodes } from '../../common/constants/error-codes';
+import { BusinessException } from '../../common/exceptions/business.exception';
 import { encodeCursor, type CursorPayload } from '../cursor';
-import type { Post, PostStatus } from '../entities/post.entity';
+import type {
+  Post,
+  PostRevision,
+  PostStatus,
+  PostWriteData,
+} from '../entities/post.entity';
 import type { QueryPostDto } from '../dto/query-post.dto';
 import type { SearchPostDto } from '../dto/search-post.dto';
 import type { CursorResult, PostsRepository } from './posts.repository';
@@ -10,13 +17,17 @@ import type { CursorResult, PostsRepository } from './posts.repository';
 export class InMemoryPostsRepository implements PostsRepository {
   // Map 比数组快、删除/查找原生 O(1)；并且导出顺序稳定，方便测试
   private readonly store = new Map<string, Post>();
+  // Day 29：每篇文章的修订历史（postId → 快照数组）
+  private readonly revisions = new Map<string, PostRevision[]>();
 
-  async create(data: Omit<Post, 'id' | 'createdAt' | 'updatedAt'>): Promise<Post> {
+  async create(data: PostWriteData): Promise<Post> {
     const now = new Date();
     const post: Post = {
       id: randomUUID(),
       createdAt: now,
       updatedAt: now,
+      version: 1,
+      viewCount: 0,
       ...data,
     };
     this.store.set(post.id, post);
@@ -155,16 +166,57 @@ export class InMemoryPostsRepository implements PostsRepository {
 
   async update(
     id: string,
-    patch: Partial<Omit<Post, 'id' | 'createdAt'>>,
+    patch: Partial<PostWriteData>,
+    expectedVersion?: number,
   ): Promise<Post | null> {
     const post = this.store.get(id);
     if (!post) return null;
-    const next: Post = { ...post, ...patch, updatedAt: new Date() };
+    // 乐观锁：版本不匹配 → 409（和 Prisma 版同语义）。
+    // ⚠️ 内存版做不到真正的事务原子性：下面"改 post + 记修订"不是一个原子单元，
+    //    只为满足接口契约 / 让单测能跑——又一个抽象的"漏点"（对照 search）。
+    if (expectedVersion !== undefined && post.version !== expectedVersion) {
+      throw new BusinessException(
+        ErrorCodes.VERSION_CONFLICT,
+        '文章已被其他人修改，请刷新后重试',
+        HttpStatus.CONFLICT,
+      );
+    }
+    const next: Post = {
+      ...post,
+      ...patch,
+      version: post.version + 1,
+      updatedAt: new Date(),
+    };
+    this.store.set(id, next);
+    // 快照一条修订
+    const list = this.revisions.get(id) ?? [];
+    list.push({
+      id: randomUUID(),
+      postId: id,
+      version: next.version,
+      title: next.title,
+      content: next.content,
+      createdAt: new Date(),
+    });
+    this.revisions.set(id, list);
+    return next;
+  }
+
+  async incrementViewCount(id: string): Promise<Post | null> {
+    const post = this.store.get(id);
+    if (!post) return null;
+    const next: Post = { ...post, viewCount: post.viewCount + 1 };
     this.store.set(id, next);
     return next;
   }
 
+  async listRevisions(postId: string): Promise<PostRevision[]> {
+    const list = this.revisions.get(postId) ?? [];
+    return [...list].sort((a, b) => b.version - a.version); // 新 → 旧
+  }
+
   async remove(id: string): Promise<boolean> {
+    this.revisions.delete(id); // 级联清掉修订（对应 onDelete: Cascade）
     return this.store.delete(id);
   }
 
@@ -172,5 +224,6 @@ export class InMemoryPostsRepository implements PostsRepository {
   /** @internal */
   clear(): void {
     this.store.clear();
+    this.revisions.clear();
   }
 }

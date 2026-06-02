@@ -1,4 +1,4 @@
-# Blog API — Day 20 里程碑 → Day 27 接入 PostgreSQL → Day 28 分页/搜索
+# Blog API — Day 20 里程碑 → Day 27 接入 PostgreSQL → Day 28 分页/搜索 → Day 29 并发控制
 
 Day 16–19 的知识点整合成一个能跑、能交接、能在切 PostgreSQL 时不返工的完整项目（Day 20 里程碑）。**Day 27 兑现了当初的承诺**：把内存仓储换成 Prisma + PostgreSQL，Service / Controller / DTO / Filter 一行未改——见下方「Day 27 更新」。**Day 28** 给列表加 cursor 分页和全文搜索——见「Day 28 更新」。
 
@@ -25,6 +25,20 @@ Day 20 留了个伏笔——所有 Repository 方法都返回 `Promise`，Servic
 
 详细讲解见 [Day 28 README](../../../days/day-28/)。
 
+## Day 29 更新：事务与并发控制
+
+给 Post 加并发控制，并引入第一张需要**多写事务**的关联表：
+
+- `Post` 加 `version`（乐观锁）+ `viewCount`（原子计数）；新增 `post_revisions` 修订表
+- `PATCH /posts/:id` 支持可选 `version`：带上即做**乐观锁**（`WHERE version=?`，不一致 → 409 `VERSION_CONFLICT`）；不带则 last-write-wins
+- `update` 现在是**交互式事务**：乐观锁更新 + 同事务写一条修订快照，要么都成要么都不成
+- `POST /posts/:id/view`：浏览计数**原子自增**（`{ increment: 1 }`），可交换写无需锁
+- `GET /posts/:id/revisions`：修订历史（新 → 旧）
+
+事务 / 隔离级别的纯演示在 Day 26 的 `blog-prisma`；这里是把乐观锁 + 原子操作 + 事务用进真实业务。
+
+详细讲解见 [Day 29 README](../../../days/day-29/)。
+
 ## 涵盖今日产出
 
 - [x] 目录按 `common / config / feature / health` 重组
@@ -34,13 +48,13 @@ Day 20 留了个伏笔——所有 Repository 方法都返回 `Promise`，Servic
 - [x] `requestId` 在响应头 / 响应体 / 日志三处一致
 - [x] `/health` 端点 + `enableShutdownHooks`
 - [x] `QueryPostDto` 支持分页 / 排序 / 关键字 / 状态过滤，`limit` 有上限（最大 100）
-- [x] E2E + 单元测试全绿（用例数随天数增长：Day 20 时 12 个 E2E → Day 27 增至 15 → Day 28 增至 21 个 E2E，外加 15 个单元测试）
+- [x] E2E + 单元测试全绿（用例数随天数增长：Day 20 时 12 个 E2E → Day 27 增至 15 → Day 28 增至 21 → Day 29 增至 27 个 E2E，外加 20 个单元测试）
 
 ## 目录结构
 
 ```
 prisma/
-├── schema.prisma                        # Day 27：单 Post 模型，migrate 管理
+├── schema.prisma                        # Post + PostRevision（Day 29），migrate 管理
 ├── migrations/                          # Day 27：初始建表 SQL（提交到版本库）
 └── sql/001_search_indexes.sql           # Day 28：FTS / trigram 索引（手动应用，见下）
 src/
@@ -130,8 +144,10 @@ pnpm test                           # 两层都跑（需要 PG）
 | GET    | `/posts/feed` | 列表 + cursor 分页（信息流） | 200 |
 | GET    | `/posts/search` | 全文搜索（相关度排序） | 200 |
 | GET    | `/posts/:id` | 按 UUID 查单条 | 200 |
+| GET    | `/posts/:id/revisions` | 修订历史（新 → 旧） | 200 |
 | POST   | `/posts` | 创建文章 | 201 |
-| PATCH  | `/posts/:id` | 局部更新 | 200 |
+| POST   | `/posts/:id/view` | 浏览计数 +1（原子自增） | 200 |
+| PATCH  | `/posts/:id` | 局部更新（可选 `version` 乐观锁） | 200 |
 | DELETE | `/posts/:id` | 删除 | 200 |
 | GET    | `/posts/debug/boom` | 故意抛 `Error`，验证 500 脱敏 | 500 |
 
@@ -196,6 +212,7 @@ pnpm test                           # 两层都跑（需要 PG）
 | `POST_NOT_FOUND` | 404 | 文章不存在 | `id` 查不到 |
 | `SLUG_TAKEN` | 409 | slug 已被占用 | 创建或更新 slug 时撞名 |
 | `POST_ARCHIVED` | 409 | 文章已归档 | 对 `status: archived` 的文章发起 `PATCH` |
+| `VERSION_CONFLICT` | 409 | 版本冲突（乐观锁） | `PATCH` 带的 `version` 与当前不一致（被并发修改） |
 | `INTERNAL_ERROR`（占位） | 500 | 服务端错误 | 任何未捕获异常，响应固定文案 `服务器内部错误` |
 
 > 业务错误（`POST_NOT_FOUND` / `SLUG_TAKEN` / `POST_ARCHIVED`）走控制器级 `BusinessExceptionFilter`，响应多一个 `category: 'business'` 字段，便于前端按维度统计。

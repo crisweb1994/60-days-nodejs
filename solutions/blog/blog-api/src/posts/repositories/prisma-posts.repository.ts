@@ -1,12 +1,22 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
-import { Prisma, type Post as PrismaPost } from '@prisma/client';
+import {
+  Prisma,
+  type Post as PrismaPost,
+  type PostRevision as PrismaRevision,
+} from '@prisma/client';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { BusinessException } from '../../common/exceptions/business.exception';
 import { PrismaService } from '../../prisma/prisma.service';
 import { encodeCursor, type CursorPayload } from '../cursor';
 import type { QueryPostDto } from '../dto/query-post.dto';
 import type { SearchPostDto } from '../dto/search-post.dto';
-import type { Post, PostMeta, PostStatus } from '../entities/post.entity';
+import type {
+  Post,
+  PostMeta,
+  PostRevision,
+  PostStatus,
+  PostWriteData,
+} from '../entities/post.entity';
 import type { CursorResult, PostsRepository } from './posts.repository';
 
 /**
@@ -38,24 +48,53 @@ export class PrismaPostsRepository implements PostsRepository {
       // meta 在 DB 是可空 JSONB，读出来是 Prisma.JsonValue | null。
       // 生产代码这里应该用 Zod 再校验一次（见 Day 26 §JSON 不安全），demo 先直接断言。
       meta: (row.meta ?? undefined) as PostMeta | undefined,
+      version: row.version,
+      viewCount: row.viewCount,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
   }
 
-  // slug 唯一约束冲突（Prisma P2002）→ 翻译成业务语义的 409 SLUG_TAKEN。
-  // 取舍：仓储本不该知道业务错误码，但把"DB 唯一冲突"收口在防腐层、翻译成应用的
-  // 冲突语义，比让它漏成 500 合理——response 形状和 Service 抛 SLUG_TAKEN 完全一致。
-  private isUniqueViolation(e: unknown): boolean {
-    return (
-      e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002'
-    );
+  // DB 修订行 → 领域修订
+  private toRevision(row: PrismaRevision): PostRevision {
+    return {
+      id: row.id,
+      postId: row.postId,
+      version: row.version,
+      title: row.title,
+      content: row.content,
+      createdAt: row.createdAt,
+    };
+  }
+
+  // 只把 **slug** 的唯一约束冲突（P2002 且 target 命中 slug）翻译成 409 SLUG_TAKEN。
+  // 不能见 P2002 就当 slug——posts 上还有别的唯一约束（如 post_revisions 的
+  // (post_id, version)），那类冲突若也报 "slug 已被占用" 就是误导。靠 e.meta.target 区分。
+  private isSlugConflict(e: unknown): boolean {
+    if (
+      !(e instanceof Prisma.PrismaClientKnownRequestError) ||
+      e.code !== 'P2002'
+    ) {
+      return false;
+    }
+    // P2002 的 meta.target 是冲突字段名数组（或约束名），slug 冲突里一定含 'slug'
+    const target = (e.meta as { target?: unknown } | undefined)?.target;
+    return JSON.stringify(target ?? '').includes('slug');
   }
 
   private slugTaken(): BusinessException {
     return new BusinessException(
       ErrorCodes.SLUG_TAKEN,
       'slug 已被占用',
+      HttpStatus.CONFLICT,
+    );
+  }
+
+  // 乐观锁版本冲突 → 409。客户端拿到后应重新读取、合并、带新 version 重试。
+  private versionConflict(): BusinessException {
+    return new BusinessException(
+      ErrorCodes.VERSION_CONFLICT,
+      '文章已被其他人修改，请刷新后重试',
       HttpStatus.CONFLICT,
     );
   }
@@ -89,9 +128,7 @@ export class PrismaPostsRepository implements PostsRepository {
     return encodeCursor({ v, id: row.id });
   }
 
-  async create(
-    data: Omit<Post, 'id' | 'createdAt' | 'updatedAt'>,
-  ): Promise<Post> {
+  async create(data: PostWriteData): Promise<Post> {
     try {
       const row = await this.prisma.post.create({
         data: {
@@ -111,7 +148,7 @@ export class PrismaPostsRepository implements PostsRepository {
       return this.toDomain(row);
     } catch (e) {
       // 正常路径 Service 已 findBySlug 预检；这里兜"预检到写入之间被并发插队"的竞态
-      if (this.isUniqueViolation(e)) throw this.slugTaken();
+      if (this.isSlugConflict(e)) throw this.slugTaken();
       throw e;
     }
   }
@@ -231,7 +268,8 @@ export class PrismaPostsRepository implements PostsRepository {
     const rows = await this.prisma.$queryRaw<
       Array<PrismaPost & { total: bigint }>
     >`
-      SELECT id, title, slug, content, tags, status, meta,
+      SELECT id, title, slug, content, tags, status, meta, version,
+             view_count AS "viewCount",
              created_at AS "createdAt",
              updated_at AS "updatedAt",
              count(*) OVER() AS total
@@ -255,10 +293,11 @@ export class PrismaPostsRepository implements PostsRepository {
 
   async update(
     id: string,
-    patch: Partial<Omit<Post, 'id' | 'createdAt'>>,
+    patch: Partial<PostWriteData>,
+    expectedVersion?: number,
   ): Promise<Post | null> {
-    // Service 已经把 undefined 字段过滤掉了，这里只搬运确实存在的键
-    const data: Prisma.PostUpdateInput = {};
+    // Service 已把 undefined 过滤掉，这里只搬运确实存在的键；version 每次更新都自增。
+    const data: Prisma.PostUpdateInput = { version: { increment: 1 } };
     if (patch.title !== undefined) data.title = patch.title;
     if (patch.slug !== undefined) data.slug = patch.slug;
     if (patch.content !== undefined) data.content = patch.content;
@@ -267,21 +306,91 @@ export class PrismaPostsRepository implements PostsRepository {
     if (patch.meta !== undefined)
       data.meta = patch.meta as unknown as Prisma.InputJsonValue;
 
+    // ★ 把"改 post + 写修订"放进一个交互式事务：要么都成、要么都不成（原子性）。
+    //   版本冲突时在事务里 throw → 整个事务回滚，修订也不会留下半条。
     try {
-      const row = await this.prisma.post.update({ where: { id }, data });
-      return this.toDomain(row);
+      return await this.prisma.$transaction(async (tx) => {
+        let row: PrismaPost;
+        if (expectedVersion !== undefined) {
+          // 乐观锁：WHERE id AND version = expected。命中 0 行 = 版本变了 或 记录没了。
+          const res = await tx.post.updateMany({
+            where: { id, version: expectedVersion },
+            data,
+          });
+          if (res.count === 0) {
+            // 区分"被并发删除"和"版本冲突"：再查一次
+            const exists = await tx.post.findUnique({
+              where: { id },
+              select: { id: true },
+            });
+            if (!exists) return null; // 记录没了 → 交给 Service 当 NOT_FOUND
+            throw this.versionConflict(); // 版本不匹配 → 409（抛出回滚事务）
+          }
+          // updateMany 只返回 count，拿不到行，要再查一次
+          row = await tx.post.findUniqueOrThrow({ where: { id } });
+        } else {
+          // 不带版本：last-write-wins（最后写入者赢），但仍自增 version。
+          // update 直接返回更新后的行，无需再查（比乐观锁分支省一次 SELECT）。
+          row = await tx.post.update({ where: { id }, data });
+        }
+
+        // 同一事务里快照一条修订
+        await tx.postRevision.create({
+          data: {
+            postId: row.id,
+            version: row.version,
+            title: row.title,
+            content: row.content,
+          },
+        });
+        return this.toDomain(row);
+      });
     } catch (e) {
-      // P2025 = 要更新的记录不存在。接口约定返回 null（不抛），交给 Service 决定语义
+      // P2025（不带版本、记录不存在）→ null；P2002（改 slug 撞名竞态）→ 409 SLUG_TAKEN
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&
         e.code === 'P2025'
       ) {
         return null;
       }
-      // P2002 = 改 slug 撞了别人的唯一约束（竞态）→ 409 SLUG_TAKEN
-      if (this.isUniqueViolation(e)) throw this.slugTaken();
+      if (this.isSlugConflict(e)) throw this.slugTaken();
       throw e;
     }
+  }
+
+  async incrementViewCount(id: string): Promise<Post | null> {
+    try {
+      // 原子自增，没有"读-改-写"竞态，不需要乐观锁 / 行锁。
+      // ★ 故意走裸 SQL 而不是 prisma.post.update：浏览不是内容变更，不该改 updated_at。
+      //   而 Prisma 的 @updatedAt 会在**任何** update/updateMany 时把 updated_at 设成 now()，
+      //   那样既不符合语义，还会让 sortBy=updatedAt 的游标分页因为浏览而漂移（Day 28）。
+      //   裸 SQL 绕开 @updatedAt；RETURNING 用列别名对齐 PrismaPost，复用 toDomain。
+      const rows = await this.prisma.$queryRaw<PrismaPost[]>`
+        UPDATE posts SET view_count = view_count + 1
+        WHERE id = ${id}::uuid
+        RETURNING id, title, slug, content, tags, status, meta, version,
+                  view_count AS "viewCount",
+                  created_at AS "createdAt",
+                  updated_at AS "updatedAt"
+      `;
+      return rows.length > 0 ? this.toDomain(rows[0]) : null;
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2025'
+      ) {
+        return null;
+      }
+      throw e;
+    }
+  }
+
+  async listRevisions(postId: string): Promise<PostRevision[]> {
+    const rows = await this.prisma.postRevision.findMany({
+      where: { postId },
+      orderBy: { version: 'desc' }, // 新 → 旧
+    });
+    return rows.map((r) => this.toRevision(r));
   }
 
   async remove(id: string): Promise<boolean> {

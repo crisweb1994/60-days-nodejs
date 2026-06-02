@@ -56,6 +56,19 @@ export class PostsController {
     return this.posts.findOne(id);
   }
 
+  // Day 29：文章修订历史（新 → 旧）
+  @Get(':id/revisions')
+  revisions(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
+    return this.posts.listRevisions(id);
+  }
+
+  // Day 29：浏览计数 +1（原子自增，无需锁）
+  @Post(':id/view')
+  @HttpCode(HttpStatus.OK)
+  incrementView(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
+    return this.posts.incrementView(id);
+  }
+
   @Post()
   @HttpCode(HttpStatus.CREATED)
   create(@Body() dto: CreatePostDto) {

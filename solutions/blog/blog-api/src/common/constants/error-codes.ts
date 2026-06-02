@@ -12,6 +12,8 @@ export const ErrorCodes = {
   POST_NOT_FOUND: 'POST_NOT_FOUND',
   SLUG_TAKEN: 'SLUG_TAKEN',
   POST_ARCHIVED: 'POST_ARCHIVED',
+  // Day 29：乐观锁版本冲突（带 version 的更新撞上了别人的并发修改）
+  VERSION_CONFLICT: 'VERSION_CONFLICT',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

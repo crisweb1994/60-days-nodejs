@@ -25,6 +25,8 @@ function fakePost(over: Partial<Post> = {}): Post {
     content: 'long enough content',
     tags: [],
     status: 'draft',
+    version: 1,
+    viewCount: 0,
     createdAt: now,
     updatedAt: now,
     ...over,
@@ -41,6 +43,8 @@ function mockRepo(over: Partial<PostsRepository> = {}): PostsRepository {
     findByCursor: async () => ({ items: [], nextCursor: null }),
     search: async () => ({ items: [], total: 0 }),
     update: async (_id, patch) => fakePost(patch as Partial<Post>),
+    incrementViewCount: async () => null,
+    listRevisions: async () => [],
     remove: async () => true,
     ...over,
   };
@@ -213,4 +217,65 @@ test('search：仓储的 total 透传到 pagination', async () => {
   assert.equal(r.pagination.total, 42);
   assert.equal(r.pagination.page, 2);
   assert.equal(r.pagination.limit, 5);
+});
+
+// ─── Day 29：乐观锁 / 浏览计数 / 修订 ─────────────────────────────────
+
+test('update：version 作为 expectedVersion 传给仓储，且不混进 patch', async () => {
+  let seenPatch: any;
+  let seenVersion: any;
+  const current = fakePost({ slug: 'old', version: 3 });
+  const service = new PostsService(
+    mockRepo({
+      findById: async () => current,
+      update: async (_id, patch, expectedVersion) => {
+        seenPatch = patch;
+        seenVersion = expectedVersion;
+        return fakePost(patch as Partial<Post>);
+      },
+    }),
+  );
+  await service.update(current.id, { title: 'new', version: 3 } as any);
+  assert.equal(seenVersion, 3, 'version 应作为第三个参数传给仓储');
+  assert.deepEqual(Object.keys(seenPatch), ['title'], 'version 不应混进 patch');
+});
+
+test('incrementView：仓储返回 null → POST_NOT_FOUND', async () => {
+  const service = new PostsService(
+    mockRepo({ incrementViewCount: async () => null }),
+  );
+  await expectBizError(() => service.incrementView('x'), 'POST_NOT_FOUND');
+});
+
+test('incrementView：返回更新后的 post', async () => {
+  const service = new PostsService(
+    mockRepo({ incrementViewCount: async () => fakePost({ viewCount: 5 }) }),
+  );
+  const r = await service.incrementView('x');
+  assert.equal(r.viewCount, 5);
+});
+
+test('listRevisions：文章不存在 → POST_NOT_FOUND（先 findOne）', async () => {
+  const service = new PostsService(mockRepo({ findById: async () => null }));
+  await expectBizError(() => service.listRevisions('x'), 'POST_NOT_FOUND');
+});
+
+test('listRevisions：文章存在 → 透传仓储结果', async () => {
+  const rev = {
+    id: 'r1',
+    postId: 'x',
+    version: 2,
+    title: 't',
+    content: 'c',
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+  };
+  const service = new PostsService(
+    mockRepo({
+      findById: async () => fakePost(),
+      listRevisions: async () => [rev],
+    }),
+  );
+  const r = await service.listRevisions('x');
+  assert.equal(r.length, 1);
+  assert.equal(r[0].version, 2);
 });

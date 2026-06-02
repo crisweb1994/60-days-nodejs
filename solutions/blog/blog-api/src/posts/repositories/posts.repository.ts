@@ -1,4 +1,4 @@
-import type { Post } from '../entities/post.entity';
+import type { Post, PostRevision, PostWriteData } from '../entities/post.entity';
 import type { QueryPostDto } from '../dto/query-post.dto';
 import type { SearchPostDto } from '../dto/search-post.dto';
 import type { CursorPayload } from '../cursor';
@@ -16,7 +16,7 @@ export interface CursorResult {
 // 仓储接口：业务语言（findBySlug / findMany），不出现 ORM 概念（whereClause / orderBy 数组）
 // 所有方法返回 Promise —— 内存实现也走 async，换 Prisma 时调用方零改动
 export interface PostsRepository {
-  create(data: Omit<Post, 'id' | 'createdAt' | 'updatedAt'>): Promise<Post>;
+  create(data: PostWriteData): Promise<Post>;
   findById(id: string): Promise<Post | null>;
   findBySlug(slug: string): Promise<Post | null>;
 
@@ -24,14 +24,25 @@ export interface PostsRepository {
   findMany(query: QueryPostDto): Promise<{ items: Post[]; total: number }>;
 
   // Day 28 —— 游标 / keyset 分页（GET /posts/feed）：只能顺序往下翻，但稳定、深翻不掉速。
-  // cursor 已由 Service 解码好（null = 第一页）；repo 只负责把它翻译成 keyset 查询。
   findByCursor(query: QueryPostDto, cursor: CursorPayload | null): Promise<CursorResult>;
 
   // Day 28 —— 全文搜索（GET /posts/search）：按相关度排序。
-  // ⚠️ 这是接口里"最不便携"的一个：真正的分词 / 词干 / 排序是 PG 的能力，
-  //    内存实现只能做近似（见 InMemoryPostsRepository.search 的注释）。
   search(query: SearchPostDto): Promise<{ items: Post[]; total: number }>;
 
-  update(id: string, patch: Partial<Omit<Post, 'id' | 'createdAt'>>): Promise<Post | null>;
+  // Day 29 —— 更新。expectedVersion 提供时做乐观锁检查（版本不匹配抛 VERSION_CONFLICT）；
+  // 无论是否提供，成功更新都自增 version，并在同一事务里写一条修订快照。
+  // 返回 null = 记录不存在。
+  update(
+    id: string,
+    patch: Partial<PostWriteData>,
+    expectedVersion?: number,
+  ): Promise<Post | null>;
+
+  // Day 29 —— 浏览计数原子自增（可交换操作，无需乐观锁 / 行锁）。返回 null = 记录不存在。
+  incrementViewCount(id: string): Promise<Post | null>;
+
+  // Day 29 —— 列出某篇文章的修订历史（新 → 旧）。
+  listRevisions(postId: string): Promise<PostRevision[]>;
+
   remove(id: string): Promise<boolean>;
 }

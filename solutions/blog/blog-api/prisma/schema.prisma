@@ -53,7 +53,39 @@ model Post {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
+  // ★ Day 29 —— 乐观锁版本号。每次成功 update 自增 1；带 expectedVersion 的更新用
+  //   WHERE version = ? 检测"读后被别人改过"，命中 0 行即版本冲突（见 Day 29 README §5）。
+  version Int @default(1)
+
+  // ★ Day 29 —— 浏览计数。自增是可交换操作，用原子 { increment: 1 } 即可，
+  //   不需要乐观锁 / 行锁（对比上面 version 那种任意字段的"读-改-写"）。
+  viewCount Int @default(0) @map("view_count")
+
+  // ★ Day 29 —— 修订历史。每次 update 在同一事务里快照一条，体现事务原子性。
+  revisions PostRevision[]
+
   // ★ 列表接口最常见的排序是"按状态过滤 + 按时间倒序"，给它一个联合索引
   @@index([status, createdAt])
   @@map("posts")
+}
+
+// ----------------------------------------------------------------------------
+// PostRevision —— Day 29：文章修订快照
+// ----------------------------------------------------------------------------
+// 每次 update 成功，在同一个事务里写一条快照。它和 posts 的版本自增必须"要么都成、
+// 要么都不成"——这就是引入这张表的目的：给 blog-api 一个真实的多写事务场景。
+model PostRevision {
+  id        String   @id @default(uuid()) @db.Uuid
+  postId    String   @map("post_id") @db.Uuid
+  version   Int // 这条快照对应的 post 版本号
+  title     String   @db.VarChar(200)
+  content   String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  // 同一篇文章每个版本至多一条快照；删文章级联删修订
+  @@unique([postId, version])
+  @@index([postId, createdAt])
+  @@map("post_revisions")
 }

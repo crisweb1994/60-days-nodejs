@@ -286,6 +286,9 @@ test('search：命中正文里的词，非命中项不返回', async () => {
   assert.equal(r.json.data.items.length, 1);
   assert.equal(r.json.data.items[0].slug, 's1');
   assert.equal(r.json.data.pagination.total, 1);
+  // 搜索结果也要带齐字段（raw SELECT 不能漏 version / viewCount）
+  assert.equal(r.json.data.items[0].version, 1);
+  assert.equal(r.json.data.items[0].viewCount, 0);
 });
 
 test('search：q 缺失 → 400 VALIDATION_ERROR', async () => {
@@ -298,4 +301,72 @@ test('search：q 全是空白 → 400（trim 后空串被 MinLength 拒）', asy
   const r = await req('GET', '/posts/search?q=%20%20%20');
   assert.equal(r.status, 400);
   assert.equal(r.json.code, 'VALIDATION_ERROR');
+});
+
+// ─── Day 29：并发控制（乐观锁 / 原子计数 / 修订）─────────────
+
+test('新建文章 version=1 / viewCount=0', async () => {
+  const r = await req('POST', '/posts', validPost({ slug: 'd29-new' }));
+  assert.equal(r.json.data.version, 1);
+  assert.equal(r.json.data.viewCount, 0);
+});
+
+test('update：version 自增，并在事务里留下修订快照', async () => {
+  const created = await req('POST', '/posts', validPost({ slug: 'd29-rev', title: 'v1' }));
+  const id = created.json.data.id;
+  assert.equal(created.json.data.version, 1);
+
+  const u1 = await req('PATCH', `/posts/${id}`, { title: 'v2' });
+  assert.equal(u1.json.data.version, 2);
+  const u2 = await req('PATCH', `/posts/${id}`, { title: 'v3' });
+  assert.equal(u2.json.data.version, 3);
+
+  // 两次 update → 两条修订（版本 3、2），新 → 旧
+  const revs = await req('GET', `/posts/${id}/revisions`);
+  assert.equal(revs.status, 200);
+  assert.equal(revs.json.data.length, 2);
+  assert.equal(revs.json.data[0].version, 3);
+  assert.equal(revs.json.data[0].title, 'v3');
+  assert.equal(revs.json.data[1].version, 2);
+});
+
+test('乐观锁：带正确 version → 成功，version 前进', async () => {
+  const created = await req('POST', '/posts', validPost({ slug: 'd29-ol-ok' }));
+  const id = created.json.data.id;
+  const r = await req('PATCH', `/posts/${id}`, { title: 'ok', version: 1 });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.data.version, 2);
+});
+
+test('乐观锁：带过期 version → 409 VERSION_CONFLICT', async () => {
+  const created = await req('POST', '/posts', validPost({ slug: 'd29-ol-conflict' }));
+  const id = created.json.data.id;
+  // 先用 version=1 改一次 → 实际 version 变 2
+  await req('PATCH', `/posts/${id}`, { title: 'first', version: 1 });
+  // 再用过期的 version=1 改 → 冲突
+  const r = await req('PATCH', `/posts/${id}`, { title: 'second', version: 1 });
+  assert.equal(r.status, 409);
+  assert.equal(r.json.code, 'VERSION_CONFLICT');
+  assert.equal(r.json.category, 'business');
+});
+
+test('浏览计数：POST /:id/view 原子自增，不动 version、不产生修订', async () => {
+  const created = await req('POST', '/posts', validPost({ slug: 'd29-view' }));
+  const id = created.json.data.id;
+  const v1 = await req('POST', `/posts/${id}/view`);
+  assert.equal(v1.status, 200);
+  assert.equal(v1.json.data.viewCount, 1);
+  const v2 = await req('POST', `/posts/${id}/view`);
+  assert.equal(v2.json.data.viewCount, 2);
+  assert.equal(v2.json.data.version, 1); // 浏览不是内容变更
+  // 浏览不该改 updatedAt（走裸 SQL 绕开 @updatedAt）
+  assert.equal(v2.json.data.updatedAt, created.json.data.updatedAt);
+  const revs = await req('GET', `/posts/${id}/revisions`);
+  assert.equal(revs.json.data.length, 0);
+});
+
+test('浏览计数：不存在的 id → 404', async () => {
+  const r = await req('POST', '/posts/00000000-0000-4000-8000-000000000000/view');
+  assert.equal(r.status, 404);
+  assert.equal(r.json.code, 'POST_NOT_FOUND');
 });
