@@ -1,0 +1,18 @@
+{
+  "name": "auth-basics",
+  "version": "0.1.0",
+  "description": "Day 31 - 认证基础 playground：手写 JWT 看穿结构 + Session vs JWT 对比（零依赖，只用 node:crypto）",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "demo:anatomy": "tsx src/01_jwt_anatomy.ts",
+    "demo:session-vs-jwt": "tsx src/02_session_vs_jwt.ts",
+    "demo:all": "pnpm demo:anatomy && pnpm demo:session-vs-jwt",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}
