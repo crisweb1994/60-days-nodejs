@@ -9,6 +9,11 @@ export default function configuration(env: Env) {
     database: {
       url: env.DATABASE_URL,
     },
+    auth: {
+      accessSecret: env.JWT_ACCESS_SECRET,
+      accessTtl: env.JWT_ACCESS_TTL, // 秒
+      refreshTtlDays: env.REFRESH_TTL_DAYS,
+    },
     cors: {
       origin: env.CORS_ORIGIN.split(',')
         .map((s) => s.trim())

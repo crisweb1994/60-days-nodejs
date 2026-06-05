@@ -37,8 +37,11 @@ async function bootstrap() {
       ].join('\n'),
     )
     .setVersion('1.0')
+    .addTag('auth', '认证：注册 / 登录 / 刷新 / 登出 / 当前用户')
     .addTag('posts', '文章：增删改查 / 分页 / 搜索 / 并发控制')
     .addTag('health', '健康检查')
+    // Day 32：在 /docs 右上角加 "Authorize" 按钮，把 access token 填进去就能试受保护接口
+    .addBearerAuth()
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('docs', app, document, {

@@ -89,3 +89,42 @@ model PostRevision {
   @@index([postId, createdAt])
   @@map("post_revisions")
 }
+
+// ----------------------------------------------------------------------------
+// User —— Day 32：注册 / 登录
+// ----------------------------------------------------------------------------
+model User {
+  id       String @id @default(uuid()) @db.Uuid
+  email    String @unique @db.VarChar(255)
+  username String @unique @db.VarChar(50)
+  // ★ 只存 bcrypt 哈希（60 字符），永远不存明文。VarChar(255) 给将来换 argon2 留余量。
+  password String @db.VarChar(255)
+  // role 为 Day 33 RBAC 预留；默认 user
+  role      String   @default("user") @db.VarChar(20)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+// ----------------------------------------------------------------------------
+// RefreshToken —— Day 32：可撤销的刷新令牌（呼应 Day 31「JWT access + 可撤销 refresh」）
+// ----------------------------------------------------------------------------
+// access token 是无状态 JWT（不入库）；refresh token 是不透明随机串，这里**只存它的
+// sha256 哈希**——数据库泄露也拿不到可用的 refresh（和"只存密码哈希"同理）。
+// 登出 / 轮换时把对应行 revokedAt 置上，即可即时作废。
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash") @db.VarChar(64) // sha256 hex = 64 字符
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}

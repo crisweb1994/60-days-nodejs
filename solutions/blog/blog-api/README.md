@@ -1,6 +1,6 @@
 # Blog API — NestJS + Prisma + PostgreSQL（阶段二里程碑 v1.0）
 
-> 演进路线：Day 20 内存版里程碑 → Day 27 接入 PostgreSQL → Day 28 分页/搜索 → Day 29 并发控制 → **Day 30 OpenAPI 文档 + 封版 v1.0**。各天细节见下方对应小节与 `days/` 下的 README。
+> 演进路线：Day 20 内存版里程碑 → Day 27 接入 PostgreSQL → Day 28 分页/搜索 → Day 29 并发控制 → Day 30 OpenAPI 文档（v1.0）→ **Day 32 JWT 认证（注册/登录）**。各天细节见下方对应小节与 `days/` 下的 README。
 
 Day 16–19 的知识点整合成一个能跑、能交接、能在切 PostgreSQL 时不返工的完整项目（Day 20 里程碑）。**Day 27 兑现了当初的承诺**：把内存仓储换成 Prisma + PostgreSQL，Service / Controller / DTO / Filter 一行未改——见下方「Day 27 更新」。**Day 28** 给列表加 cursor 分页和全文搜索——见「Day 28 更新」。
 
@@ -53,6 +53,20 @@ Day 20 留了个伏笔——所有 Repository 方法都返回 `Promise`，Servic
 
 详细讲解见 [Day 30 README](../../../days/day-30/)。
 
+## Day 32 更新：JWT 认证（注册 / 登录）
+
+阶段三第一刀落到 blog-api。新增 `auth` 模块，**只做认证、暂不保护 posts**（那是 Day 33 RBAC）：
+
+- 新增 `users` + `refresh_tokens` 两张表（refresh 只存 sha256 哈希、可撤销）
+- `POST /auth/register`：bcrypt 哈希密码（`bcryptjs`），唯一性预检 + P2002 兜底
+- `POST /auth/login`：**防用户枚举**（统一错误 + 常量时间比对）
+- **Access（短 JWT，无状态）+ Refresh（不透明随机、存哈希、可撤销、刷新即轮换）** 双 Token
+- `JwtAuthGuard` + `@CurrentUser()` 保护 `GET /auth/me`；验签**固定算法**（防 alg 攻击）
+- 配置加 `JWT_ACCESS_SECRET`（必填，缺了启动即崩）/ `JWT_ACCESS_TTL` / `REFRESH_TTL_DAYS`
+- Swagger 加 `addBearerAuth()`，`/docs` 右上角可 Authorize
+
+详细讲解见 [Day 32 README](../../../days/day-32/)。
+
 ## 涵盖今日产出
 
 - [x] 目录按 `common / config / feature / health` 重组
@@ -62,7 +76,7 @@ Day 20 留了个伏笔——所有 Repository 方法都返回 `Promise`，Servic
 - [x] `requestId` 在响应头 / 响应体 / 日志三处一致
 - [x] `/health` 端点 + `enableShutdownHooks`
 - [x] `QueryPostDto` 支持分页 / 排序 / 关键字 / 状态过滤，`limit` 有上限（最大 100）
-- [x] E2E + 单元测试全绿（用例数随天数增长：Day 20 时 12 个 E2E → Day 27 增至 15 → Day 28 增至 21 → Day 29 增至 27 个 E2E，外加 20 个单元测试）
+- [x] E2E + 单元测试全绿（用例数随天数增长：Day 20:12 → Day 27:15 → Day 28:21 → Day 29:27 → Day 32 +13 个 auth E2E（共 40 个 E2E），外加 26 个单元测试）
 
 ## 目录结构
 
@@ -100,6 +114,14 @@ src/
 ├── health/
 │   ├── health.module.ts
 │   └── health.controller.ts             # GET /health
+├── auth/                                # Day 32：认证
+│   ├── auth.module.ts                   # JwtModule.registerAsync + 注入 ConfigService
+│   ├── auth.controller.ts               # register / login / refresh / logout / me
+│   ├── auth.service.ts                  # bcrypt + 防用户枚举 + 出口脱敏
+│   ├── tokens.service.ts                # access(JWT) + refresh(随机 / 存哈希 / 轮换)
+│   ├── guards/jwt-auth.guard.ts         # 校验 Bearer，挂 req.user
+│   ├── decorators/current-user.decorator.ts
+│   └── dto/                             # register / login / refresh / auth-response
 └── posts/
     ├── posts.module.ts                  # POSTS_REPOSITORY token → PrismaPostsRepository
     ├── posts.controller.ts              # /posts(offset) + /posts/feed(cursor) + /posts/search(FTS)
@@ -149,7 +171,7 @@ pnpm test:e2e                       # 集成测试：起真 PG，跑整条 HTTP�
 pnpm test                           # 两层都跑（需要 PG）
 ```
 
-> ⚠️ `pnpm test:e2e` 每个用例前会 `deleteMany()` 清空 `posts` 表。请让 `DATABASE_URL` 指向一次性的库/schema（如 `blog_api` 或专门的 `blog_api_test`），**别指向有数据的库**。
+> ⚠️ `pnpm test:e2e` 每个用例前会 `deleteMany()` 清空 `posts`（以及 Day 32 的 `users` / `refresh_tokens`）表。请让 `DATABASE_URL` 指向一次性的库/schema（如 `blog_api` 或专门的 `blog_api_test`），**别指向有数据的库**。
 
 ## 接口列表
 
@@ -159,6 +181,11 @@ pnpm test                           # 两层都跑（需要 PG）
 
 | Method | Path | 说明 | 成功状态码 |
 |--------|------|------|-----------|
+| POST   | `/auth/register` | 注册（bcrypt + 返回双 Token） | 201 |
+| POST   | `/auth/login` | 登录 | 200 |
+| POST   | `/auth/refresh` | 用 refresh 换新 access（轮换） | 200 |
+| POST   | `/auth/logout` | 登出（作废 refresh） | 200 |
+| GET    | `/auth/me` | 当前用户（需 Bearer access token） | 200 |
 | GET    | `/health` | 健康检查（不进访问日志） | 200 |
 | GET    | `/posts` | 列表 + offset 分页 + 过滤 | 200 |
 | GET    | `/posts/feed` | 列表 + cursor 分页（信息流） | 200 |
@@ -233,6 +260,11 @@ pnpm test                           # 两层都跑（需要 PG）
 | `SLUG_TAKEN` | 409 | slug 已被占用 | 创建或更新 slug 时撞名 |
 | `POST_ARCHIVED` | 409 | 文章已归档 | 对 `status: archived` 的文章发起 `PATCH` |
 | `VERSION_CONFLICT` | 409 | 版本冲突（乐观锁） | `PATCH` 带的 `version` 与当前不一致（被并发修改） |
+| `EMAIL_TAKEN` | 409 | 邮箱已注册 | 注册时邮箱重复 |
+| `USERNAME_TAKEN` | 409 | 用户名已占用 | 注册时用户名重复 |
+| `INVALID_CREDENTIALS` | 401 | 邮箱或密码错误 | 登录失败（不区分邮箱是否存在）|
+| `INVALID_REFRESH_TOKEN` | 401 | refresh 无效/过期 | 刷新时 refresh 不存在/已撤销/已过期 |
+| `UNAUTHORIZED` | 401 | 未认证 | 受保护接口缺少/无效的 access token |
 | `INTERNAL_ERROR`（占位） | 500 | 服务端错误 | 任何未捕获异常，响应固定文案 `服务器内部错误` |
 
 > 业务错误（`POST_NOT_FOUND` / `SLUG_TAKEN` / `POST_ARCHIVED`）走控制器级 `BusinessExceptionFilter`，响应多一个 `category: 'business'` 字段，便于前端按维度统计。

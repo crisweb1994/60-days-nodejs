@@ -33,6 +33,8 @@ before(async () => {
   // 没显式给 DATABASE_URL 时，回落到 blog-db 的 PG + blog_api schema
   process.env.DATABASE_URL ??=
     'postgresql://blog:blog_dev_pwd@localhost:5432/blog?schema=blog_api';
+  // Day 32：AppModule 现在要求 JWT_ACCESS_SECRET，否则启动期 zod 校验失败
+  process.env.JWT_ACCESS_SECRET ??= 'test-access-secret-at-least-16-chars';
 
   app = await NestFactory.create(AppModule, { logger: false });
   app.enableShutdownHooks();

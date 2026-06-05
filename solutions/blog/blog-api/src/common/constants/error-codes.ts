@@ -14,6 +14,12 @@ export const ErrorCodes = {
   POST_ARCHIVED: 'POST_ARCHIVED',
   // Day 29：乐观锁版本冲突（带 version 的更新撞上了别人的并发修改）
   VERSION_CONFLICT: 'VERSION_CONFLICT',
+
+  // Day 32：认证
+  EMAIL_TAKEN: 'EMAIL_TAKEN',
+  USERNAME_TAKEN: 'USERNAME_TAKEN',
+  INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
+  INVALID_REFRESH_TOKEN: 'INVALID_REFRESH_TOKEN',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

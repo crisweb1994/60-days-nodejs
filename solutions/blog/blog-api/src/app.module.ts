@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
+import { AuthModule } from './auth/auth.module';
 import { CommonModule } from './common/common.module';
 import configuration from './config/configuration';
 import { validateEnv } from './config/config.validation';
@@ -20,6 +21,7 @@ import { PostsModule } from './posts/posts.module';
     }),
     CommonModule, // 全局 Filter / Interceptor / Pipe + Middleware 都在这里
     HealthModule,
+    AuthModule, // Day 32：注册 / 登录 / JWT
     PostsModule,
   ],
 })
