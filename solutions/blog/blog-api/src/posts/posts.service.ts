@@ -6,10 +6,17 @@ import { CreatePostDto } from './dto/create-post.dto';
 import { QueryPostDto } from './dto/query-post.dto';
 import { SearchPostDto } from './dto/search-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
+import type { Post } from './entities/post.entity';
 import {
   POSTS_REPOSITORY,
   type PostsRepository,
 } from './repositories/posts.repository';
+
+// Day 33：当前操作者（来自 JWT 的 sub + role），结构和 auth 的 JwtPayload 兼容
+export interface Actor {
+  sub: string;
+  role: string;
+}
 
 @Injectable()
 export class PostsService {
@@ -96,7 +103,7 @@ export class PostsService {
     return this.repo.listRevisions(id);
   }
 
-  async create(dto: CreatePostDto) {
+  async create(dto: CreatePostDto, authorId: string) {
     if (await this.repo.findBySlug(dto.slug)) {
       throw new BusinessException(
         ErrorCodes.SLUG_TAKEN,
@@ -111,11 +118,25 @@ export class PostsService {
       tags: dto.tags ?? [],
       status: dto.status,
       meta: dto.meta,
+      authorId, // Day 33：作者 = 当前登录用户
     });
   }
 
-  async update(id: string, dto: UpdatePostDto) {
-    const post = await this.findOne(id); // 复用 NOT_FOUND 分支
+  // Day 33：资源级权限——admin 可改任意文章；其他人只能改自己写的；
+  // 无主文章（authorId 空，迁移前的老数据）只有 admin 能改。
+  private assertCanModify(post: Post, actor: Actor) {
+    if (actor.role === 'admin') return;
+    if (post.authorId && post.authorId === actor.sub) return;
+    throw new BusinessException(
+      ErrorCodes.FORBIDDEN,
+      '只有作者或管理员可以修改这篇文章',
+      HttpStatus.FORBIDDEN,
+    );
+  }
+
+  async update(id: string, dto: UpdatePostDto, actor: Actor) {
+    const post = await this.findOne(id); // 复用 NOT_FOUND 分支（404 优先于 403）
+    this.assertCanModify(post, actor);
     if (post.status === 'archived') {
       throw new BusinessException(
         ErrorCodes.POST_ARCHIVED,
@@ -147,7 +168,10 @@ export class PostsService {
     return updated;
   }
 
-  async remove(id: string) {
+  async remove(id: string, actor: Actor) {
+    // 先查出来：404 优先于 403，且要拿到 authorId 做权限判断
+    const post = await this.findOne(id);
+    this.assertCanModify(post, actor);
     const ok = await this.repo.remove(id);
     if (!ok) {
       throw new BusinessException(

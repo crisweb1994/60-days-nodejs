@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PostsController } from './posts.controller';
 import { PostsService } from './posts.service';
@@ -6,9 +7,9 @@ import { PrismaPostsRepository } from './repositories/prisma-posts.repository';
 import { POSTS_REPOSITORY } from './repositories/posts.repository';
 
 @Module({
-  // PrismaModule 是 @Global，其实不 import 也能注入 PrismaService；
-  // 这里显式写出来，是为了让"PostsModule 依赖数据库"这件事在模块层面可见。
-  imports: [PrismaModule],
+  // PrismaModule 是 @Global，其实不 import 也能注入 PrismaService；这里显式写出来。
+  // Day 33：import AuthModule —— 它导出了 JwtAuthGuard，写接口 @UseGuards(JwtAuthGuard) 才能解析。
+  imports: [PrismaModule, AuthModule],
   controllers: [PostsController],
   providers: [
     PostsService,

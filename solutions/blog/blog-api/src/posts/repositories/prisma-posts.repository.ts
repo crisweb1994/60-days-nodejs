@@ -48,6 +48,7 @@ export class PrismaPostsRepository implements PostsRepository {
       // meta 在 DB 是可空 JSONB，读出来是 Prisma.JsonValue | null。
       // 生产代码这里应该用 Zod 再校验一次（见 Day 26 §JSON 不安全），demo 先直接断言。
       meta: (row.meta ?? undefined) as PostMeta | undefined,
+      authorId: row.authorId ?? undefined,
       version: row.version,
       viewCount: row.viewCount,
       createdAt: row.createdAt,
@@ -138,6 +139,8 @@ export class PrismaPostsRepository implements PostsRepository {
           // tags 在领域类型里就是必填 string[]，Service 已统一兜底成 []，这里不再 ?? []
           tags: data.tags,
           status: data.status,
+          // Day 33：作者。Service 给登录用户的创建会带上 authorId；没传就落 NULL（无主）
+          authorId: data.authorId ?? null,
           // meta 没传就不写这个键，让它落 DB NULL；传了才作为 JSON 写入。
           // PostMeta 是具名 interface，没有索引签名，要先经 unknown 再断言成 JSON 输入类型
           ...(data.meta !== undefined
@@ -270,6 +273,7 @@ export class PrismaPostsRepository implements PostsRepository {
     >`
       SELECT id, title, slug, content, tags, status, meta, version,
              view_count AS "viewCount",
+             author_id AS "authorId",
              created_at AS "createdAt",
              updated_at AS "updatedAt",
              count(*) OVER() AS total

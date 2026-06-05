@@ -1,6 +1,6 @@
 # Blog API — NestJS + Prisma + PostgreSQL（阶段二里程碑 v1.0）
 
-> 演进路线：Day 20 内存版里程碑 → Day 27 接入 PostgreSQL → Day 28 分页/搜索 → Day 29 并发控制 → Day 30 OpenAPI 文档（v1.0）→ **Day 32 JWT 认证（注册/登录）**。各天细节见下方对应小节与 `days/` 下的 README。
+> 演进路线：Day 20 内存版里程碑 → Day 27 接入 PostgreSQL → Day 28 分页/搜索 → Day 29 并发控制 → Day 30 OpenAPI 文档（v1.0）→ Day 32 JWT 认证 → **Day 33 RBAC 授权**。各天细节见下方对应小节与 `days/` 下的 README。
 
 Day 16–19 的知识点整合成一个能跑、能交接、能在切 PostgreSQL 时不返工的完整项目（Day 20 里程碑）。**Day 27 兑现了当初的承诺**：把内存仓储换成 Prisma + PostgreSQL，Service / Controller / DTO / Filter 一行未改——见下方「Day 27 更新」。**Day 28** 给列表加 cursor 分页和全文搜索——见「Day 28 更新」。
 
@@ -67,6 +67,18 @@ Day 20 留了个伏笔——所有 Repository 方法都返回 `Promise`，Servic
 
 详细讲解见 [Day 32 README](../../../days/day-32/)。
 
+## Day 33 更新：RBAC 授权
+
+给 posts 加权限——这是 Day 32 留的尾（认证了但没保护资源）：
+
+- `Post` 加可空 `authorId`（FK→User，删用户置空）；创建时作者=当前登录用户
+- **写接口需登录**：`POST/PATCH/DELETE /posts` 加 `@UseGuards(JwtAuthGuard)`；**读接口保持公开**
+- **资源级权限**：改/删要是**作者本人或 admin**（在 `PostsService.assertCanModify` 判，因为要先查出文章）
+- **纯角色 RBAC**：`@Roles('admin')` + `RolesGuard`（Reflector 读元数据）；示例端点 `GET /auth/users`（仅 admin）
+- 一个跨模块 DI 坑：`@UseGuards` 在控制器所在模块实例化守卫 → `AuthModule` 必须 re-export `JwtModule`，否则启动报错
+
+详细讲解见 [Day 33 README](../../../days/day-33/)。
+
 ## 涵盖今日产出
 
 - [x] 目录按 `common / config / feature / health` 重组
@@ -76,7 +88,7 @@ Day 20 留了个伏笔——所有 Repository 方法都返回 `Promise`，Servic
 - [x] `requestId` 在响应头 / 响应体 / 日志三处一致
 - [x] `/health` 端点 + `enableShutdownHooks`
 - [x] `QueryPostDto` 支持分页 / 排序 / 关键字 / 状态过滤，`limit` 有上限（最大 100）
-- [x] E2E + 单元测试全绿（用例数随天数增长：Day 20:12 → Day 27:15 → Day 28:21 → Day 29:27 → Day 32 +13 个 auth E2E（共 40 个 E2E），外加 26 个单元测试）
+- [x] E2E + 单元测试全绿（Day 33：posts 33 个 + auth 16 个 = 49 个 E2E，外加 35 个单元测试；e2e 用 `--test-concurrency=1` 串行跑）
 
 ## 目录结构
 
@@ -116,11 +128,13 @@ src/
 │   └── health.controller.ts             # GET /health
 ├── auth/                                # Day 32：认证
 │   ├── auth.module.ts                   # JwtModule.registerAsync + 注入 ConfigService
-│   ├── auth.controller.ts               # register / login / refresh / logout / me
-│   ├── auth.service.ts                  # bcrypt + 防用户枚举 + 出口脱敏
+│   ├── auth.controller.ts               # register / login / refresh / logout / me / users(admin)
+│   ├── auth.service.ts                  # bcrypt + 防用户枚举 + 出口脱敏 + listUsers
 │   ├── tokens.service.ts                # access(JWT) + refresh(随机 / 存哈希 / 轮换)
-│   ├── guards/jwt-auth.guard.ts         # 校验 Bearer，挂 req.user
+│   ├── guards/jwt-auth.guard.ts         # 认证：校验 Bearer，挂 req.user
+│   ├── guards/roles.guard.ts            # Day 33：纯角色 RBAC（Reflector 读 @Roles）
 │   ├── decorators/current-user.decorator.ts
+│   ├── decorators/roles.decorator.ts    # Day 33：@Roles('admin')
 │   └── dto/                             # register / login / refresh / auth-response
 └── posts/
     ├── posts.module.ts                  # POSTS_REPOSITORY token → PrismaPostsRepository
@@ -171,7 +185,7 @@ pnpm test:e2e                       # 集成测试：起真 PG，跑整条 HTTP�
 pnpm test                           # 两层都跑（需要 PG）
 ```
 
-> ⚠️ `pnpm test:e2e` 每个用例前会 `deleteMany()` 清空 `posts`（以及 Day 32 的 `users` / `refresh_tokens`）表。请让 `DATABASE_URL` 指向一次性的库/schema（如 `blog_api` 或专门的 `blog_api_test`），**别指向有数据的库**。
+> ⚠️ `pnpm test:e2e` 会清空 `posts` / `users` / `refresh_tokens` 表。Day 33 起用 `--test-concurrency=1` **串行**跑——auth.e2e 和 posts.e2e 共用 `users` 表，并行会互相清掉对方的测试用户。请让 `DATABASE_URL` 指向一次性的库/schema（如 `blog_api_test`），**别指向有数据的库**。
 
 ## 接口列表
 
@@ -186,16 +200,17 @@ pnpm test                           # 两层都跑（需要 PG）
 | POST   | `/auth/refresh` | 用 refresh 换新 access（轮换） | 200 |
 | POST   | `/auth/logout` | 登出（作废 refresh） | 200 |
 | GET    | `/auth/me` | 当前用户（需 Bearer access token） | 200 |
+| GET    | `/auth/users` | 列出所有用户（**仅 admin**） | 200 |
 | GET    | `/health` | 健康检查（不进访问日志） | 200 |
 | GET    | `/posts` | 列表 + offset 分页 + 过滤 | 200 |
 | GET    | `/posts/feed` | 列表 + cursor 分页（信息流） | 200 |
 | GET    | `/posts/search` | 全文搜索（相关度排序） | 200 |
 | GET    | `/posts/:id` | 按 UUID 查单条 | 200 |
 | GET    | `/posts/:id/revisions` | 修订历史（新 → 旧） | 200 |
-| POST   | `/posts` | 创建文章 | 201 |
-| POST   | `/posts/:id/view` | 浏览计数 +1（原子自增） | 200 |
-| PATCH  | `/posts/:id` | 局部更新（可选 `version` 乐观锁） | 200 |
-| DELETE | `/posts/:id` | 删除 | 200 |
+| POST   | `/posts` | 创建文章（**需登录**，作者=当前用户） | 201 |
+| POST   | `/posts/:id/view` | 浏览计数 +1（公开） | 200 |
+| PATCH  | `/posts/:id` | 局部更新（**需登录 + 作者本人或 admin**） | 200 |
+| DELETE | `/posts/:id` | 删除（**需登录 + 作者本人或 admin**） | 200 |
 | GET    | `/posts/debug/boom` | 故意抛 `Error`，验证 500 脱敏 | 500 |
 
 ### `GET /posts` 查询参数
@@ -265,6 +280,7 @@ pnpm test                           # 两层都跑（需要 PG）
 | `INVALID_CREDENTIALS` | 401 | 邮箱或密码错误 | 登录失败（不区分邮箱是否存在）|
 | `INVALID_REFRESH_TOKEN` | 401 | refresh 无效/过期 | 刷新时 refresh 不存在/已撤销/已过期 |
 | `UNAUTHORIZED` | 401 | 未认证 | 受保护接口缺少/无效的 access token |
+| `FORBIDDEN` | 403 | 无权限 | 改/删非自己的文章（非 admin）；访问 admin-only 接口 |
 | `INTERNAL_ERROR`（占位） | 500 | 服务端错误 | 任何未捕获异常，响应固定文案 `服务器内部错误` |
 
 > 业务错误（`POST_NOT_FOUND` / `SLUG_TAKEN` / `POST_ARCHIVED`）走控制器级 `BusinessExceptionFilter`，响应多一个 `category: 'business'` 字段，便于前端按维度统计。

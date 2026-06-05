@@ -16,6 +16,7 @@ import {
 import { BusinessExceptionFilter } from '../common/filters/business-exception.filter';
 import { AuthService } from './auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
+import { Roles } from './decorators/roles.decorator';
 import {
   AuthResponseDto,
   LogoutResponseDto,
@@ -25,6 +26,7 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { RegisterDto } from './dto/register.dto';
 import { JwtAuthGuard, type JwtPayload } from './guards/jwt-auth.guard';
+import { RolesGuard } from './guards/roles.guard';
 
 // 和 PostsController 一样挂 BusinessExceptionFilter：让 Service / Guard 抛的 BusinessException
 // 走统一错误外壳（含 category:'business'）。Guard 抛的异常也会被这个 filter 接住。
@@ -78,5 +80,18 @@ export class AuthController {
   @ApiErrorEnvelope(401, '未认证', 'UNAUTHORIZED')
   me(@CurrentUser() user: JwtPayload) {
     return this.auth.me(user.sub);
+  }
+
+  // Day 33：纯 RBAC 示例——先 JwtAuthGuard 认证，再 RolesGuard 校验角色（顺序不能反）
+  @Get('users')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '列出所有用户（仅 admin）' })
+  @ApiEnvelope(UserResponseDto, { isArray: true })
+  @ApiErrorEnvelope(401, '未认证', 'UNAUTHORIZED')
+  @ApiErrorEnvelope(403, '权限不足', 'FORBIDDEN')
+  listUsers() {
+    return this.auth.listUsers();
   }
 }

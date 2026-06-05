@@ -9,52 +9,25 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 // ============================================================================
-// 集成测试（e2e）：起完整 Nest 应用 + 真 PostgreSQL，验证从 HTTP 到 DB 的整条链路。
+// 集成测试（e2e）：起完整 Nest 应用 + 真 PostgreSQL。
+// Day 33 起，写接口（create/update/delete）需要登录 + 权限——读接口仍公开。
 //
-// 与单元测试（posts.service.unit.test.ts）的分工：
-//   - 单测：mock 仓储，毫秒级，测业务分支，不需要 DB
-//   - 集成：真 PG，测 Prisma 映射 / 过滤器 / 拦截器 / 校验管道是否真的串起来
-//
-// ⚠️ 这个测试会清空 DATABASE_URL 指向 schema 下的 posts 表。
-//    务必指向一个一次性的库/schema（如 blog_api 或 blog_api_test），别指生产/有数据的库。
-//    跑之前先确保已 migrate：pnpm prisma:migrate
+// ⚠️ 会清空 posts / users / refresh_tokens。务必指向一次性库/schema。先 pnpm prisma:migrate。
+//    e2e 用 --test-concurrency=1 串行跑，避免 auth.e2e 并行清 users 把这里的测试用户删掉。
 // ============================================================================
 
 let app: INestApplication;
 let baseUrl: string;
 let prisma: PrismaService;
 
-before(async () => {
-  // 给 ConfigModule 喂稳定的 env，避免依赖跑测时的 shell 环境
-  process.env.NODE_ENV = 'test';
-  process.env.PORT = '0';
-  process.env.CORS_ORIGIN = 'http://localhost:5173';
-  process.env.PAGE_LIMIT = '20';
-  // 没显式给 DATABASE_URL 时，回落到 blog-db 的 PG + blog_api schema
-  process.env.DATABASE_URL ??=
-    'postgresql://blog:blog_dev_pwd@localhost:5432/blog?schema=blog_api';
-  // Day 32：AppModule 现在要求 JWT_ACCESS_SECRET，否则启动期 zod 校验失败
-  process.env.JWT_ACCESS_SECRET ??= 'test-access-secret-at-least-16-chars';
-
-  app = await NestFactory.create(AppModule, { logger: false });
-  app.enableShutdownHooks();
-  await app.listen(0);
-
-  const server = app.getHttpServer();
-  const addr = server.address() as AddressInfo;
-  baseUrl = `http://127.0.0.1:${addr.port}`;
-
-  prisma = app.get(PrismaService);
-});
-
-after(async () => {
-  await app.close();
-});
-
-beforeEach(async () => {
-  // 每个 case 一张干净的 posts 表，否则 case 顺序敏感（和内存版的 repo.clear() 同一目的）
-  await prisma.post.deleteMany();
-});
+// Day 33：测试用户（在 before 里注册一次）
+let authorToken = '';
+let authorId = '';
+let otherToken = '';
+let adminToken = '';
+const asAuthor = () => ({ authorization: `Bearer ${authorToken}` });
+const asOther = () => ({ authorization: `Bearer ${otherToken}` });
+const asAdmin = () => ({ authorization: `Bearer ${adminToken}` });
 
 async function req(
   method: string,
@@ -74,6 +47,69 @@ async function req(
   return { status: res.status, headers: res.headers, json };
 }
 
+before(async () => {
+  process.env.NODE_ENV = 'test';
+  process.env.PORT = '0';
+  process.env.CORS_ORIGIN = 'http://localhost:5173';
+  process.env.PAGE_LIMIT = '20';
+  process.env.DATABASE_URL ??=
+    'postgresql://blog:blog_dev_pwd@localhost:5432/blog?schema=blog_api';
+  process.env.JWT_ACCESS_SECRET ??= 'test-access-secret-at-least-32-chars-long';
+
+  app = await NestFactory.create(AppModule, { logger: false });
+  app.enableShutdownHooks();
+  await app.listen(0);
+  baseUrl = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
+  prisma = app.get(PrismaService);
+
+  // 一次性建三个测试用户：author（写文章）、other（别人）、admin
+  await prisma.post.deleteMany();
+  await prisma.refreshToken.deleteMany();
+  await prisma.user.deleteMany();
+
+  const author = await req('POST', '/auth/register', {
+    email: 'author@e2e.test',
+    username: 'author',
+    password: 'Pass-1234',
+  });
+  authorToken = author.json.data.accessToken;
+  authorId = author.json.data.user.id;
+
+  otherToken = (
+    await req('POST', '/auth/register', {
+      email: 'other@e2e.test',
+      username: 'other',
+      password: 'Pass-1234',
+    })
+  ).json.data.accessToken;
+
+  const admin = await req('POST', '/auth/register', {
+    email: 'admin@e2e.test',
+    username: 'adminuser',
+    password: 'Pass-1234',
+  });
+  // 注册默认 role=user；直接改库提到 admin，再登录拿带 admin 角色的 token
+  await prisma.user.update({
+    where: { id: admin.json.data.user.id },
+    data: { role: 'admin' },
+  });
+  adminToken = (
+    await req('POST', '/auth/login', {
+      email: 'admin@e2e.test',
+      password: 'Pass-1234',
+    })
+  ).json.data.accessToken;
+});
+
+after(async () => {
+  await app.close();
+});
+
+beforeEach(async () => {
+  // 只清 posts，保留 before() 建的测试用户（authorId 是 SetNull，删 posts 不影响用户）
+  await prisma.post.deleteMany();
+});
+
 const validPost = (over: Record<string, unknown> = {}) => ({
   title: 'Hello Day 27',
   slug: 'hello-day-27',
@@ -82,20 +118,21 @@ const validPost = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-// ─── 验收清单（和 Day 20 同一组场景，底层从内存换成了 PG）──────────
+// ─── 验收清单（写接口现在要带 author token）──────────────────────────
 
-test('1) 正常创建 → 201 + code:0 + 完整 Post（id 来自 PG）', async () => {
-  const r = await req('POST', '/posts', validPost());
+test('1) 正常创建 → 201 + code:0 + 完整 Post + authorId=当前用户', async () => {
+  const r = await req('POST', '/posts', validPost(), asAuthor());
   assert.equal(r.status, 201);
   assert.equal(r.json.code, 0);
   assert.equal(r.json.message, 'ok');
   assert.equal(r.json.data.title, 'Hello Day 27');
   assert.ok(r.json.data.id);
   assert.ok(r.json.data.createdAt);
+  assert.equal(r.json.data.authorId, authorId, 'Day 33：作者=当前登录用户');
 });
 
 test('2) 字段缺失 → 400 + VALIDATION_ERROR + 结构化 errors', async () => {
-  const r = await req('POST', '/posts', { title: 'x' });
+  const r = await req('POST', '/posts', { title: 'x' }, asAuthor());
   assert.equal(r.status, 400);
   assert.equal(r.json.code, 'VALIDATION_ERROR');
   assert.ok(Array.isArray(r.json.errors));
@@ -104,14 +141,14 @@ test('2) 字段缺失 → 400 + VALIDATION_ERROR + 结构化 errors', async () =
 });
 
 test('3) 多余字段 → 400 + VALIDATION_ERROR（forbidNonWhitelisted）', async () => {
-  const r = await req('POST', '/posts', validPost({ evil: true, isAdmin: true }));
+  const r = await req('POST', '/posts', validPost({ evil: true, isAdmin: true }), asAuthor());
   assert.equal(r.status, 400);
   assert.equal(r.json.code, 'VALIDATION_ERROR');
 });
 
 test('4) 重复 slug → 409 + SLUG_TAKEN + category=business', async () => {
-  await req('POST', '/posts', validPost({ slug: 'dup-slug' }));
-  const r = await req('POST', '/posts', validPost({ slug: 'dup-slug' }));
+  await req('POST', '/posts', validPost({ slug: 'dup-slug' }), asAuthor());
+  const r = await req('POST', '/posts', validPost({ slug: 'dup-slug' }), asAuthor());
   assert.equal(r.status, HttpStatus.CONFLICT);
   assert.equal(r.json.code, 'SLUG_TAKEN');
   assert.equal(r.json.category, 'business');
@@ -161,9 +198,9 @@ test('分页 limit 上限：?limit=99999 被 ValidationPipe 拒绝', async () =>
 });
 
 test('查询：keyword + status + sortBy 在 PG 里真正生效', async () => {
-  await req('POST', '/posts', validPost({ slug: 'a', title: 'NestJS guide', status: 'published' }));
-  await req('POST', '/posts', validPost({ slug: 'b', title: 'Express guide', status: 'draft' }));
-  await req('POST', '/posts', validPost({ slug: 'c', title: 'NestJS deep dive', status: 'published' }));
+  await req('POST', '/posts', validPost({ slug: 'a', title: 'NestJS guide', status: 'published' }), asAuthor());
+  await req('POST', '/posts', validPost({ slug: 'b', title: 'Express guide', status: 'draft' }), asAuthor());
+  await req('POST', '/posts', validPost({ slug: 'c', title: 'NestJS deep dive', status: 'published' }), asAuthor());
 
   const r = await req('GET', '/posts?keyword=nest&status=published&sortBy=title&order=asc');
   assert.equal(r.status, 200);
@@ -173,8 +210,8 @@ test('查询：keyword + status + sortBy 在 PG 里真正生效', async () => {
 });
 
 test('tag 过滤：tags 数组列的 has 查询', async () => {
-  await req('POST', '/posts', validPost({ slug: 't1', tags: ['nestjs', 'prisma'] }));
-  await req('POST', '/posts', validPost({ slug: 't2', tags: ['redis'] }));
+  await req('POST', '/posts', validPost({ slug: 't1', tags: ['nestjs', 'prisma'] }), asAuthor());
+  await req('POST', '/posts', validPost({ slug: 't2', tags: ['redis'] }), asAuthor());
 
   const r = await req('GET', '/posts?tag=prisma');
   assert.equal(r.status, 200);
@@ -183,26 +220,26 @@ test('tag 过滤：tags 数组列的 has 查询', async () => {
 });
 
 test('archived 文章拒绝更新 → POST_ARCHIVED', async () => {
-  const created = await req('POST', '/posts', validPost({ slug: 'arch', status: 'archived' }));
+  const created = await req('POST', '/posts', validPost({ slug: 'arch', status: 'archived' }), asAuthor());
   const id = created.json.data.id;
-  const r = await req('PATCH', `/posts/${id}`, { title: 'new title' });
+  const r = await req('PATCH', `/posts/${id}`, { title: 'new title' }, asAuthor());
   assert.equal(r.status, 409);
   assert.equal(r.json.code, 'POST_ARCHIVED');
   assert.equal(r.json.category, 'business');
 });
 
 test('更新后再查：改动真的落到了 PG', async () => {
-  const created = await req('POST', '/posts', validPost({ slug: 'upd', title: 'before' }));
+  const created = await req('POST', '/posts', validPost({ slug: 'upd', title: 'before' }), asAuthor());
   const id = created.json.data.id;
-  await req('PATCH', `/posts/${id}`, { title: 'after' });
+  await req('PATCH', `/posts/${id}`, { title: 'after' }, asAuthor());
   const got = await req('GET', `/posts/${id}`);
   assert.equal(got.json.data.title, 'after');
 });
 
 test('删除：DELETE 后再 GET → 404', async () => {
-  const created = await req('POST', '/posts', validPost({ slug: 'del' }));
+  const created = await req('POST', '/posts', validPost({ slug: 'del' }), asAuthor());
   const id = created.json.data.id;
-  const del = await req('DELETE', `/posts/${id}`);
+  const del = await req('DELETE', `/posts/${id}`, undefined, asAuthor());
   assert.equal(del.status, 200);
   assert.equal(del.json.data.deleted, true);
   const got = await req('GET', `/posts/${id}`);
@@ -217,25 +254,21 @@ test('非法 UUID 路径参数 → 400（ParseUUIDPipe）', async () => {
 // ─── Day 28：游标分页 ───────────────────────────────────────
 
 test('feed：按 title 升序逐页推进，页间不重不漏', async () => {
-  // 用 title 排序（字符串，无时间戳精度问题），断言顺序确定
   for (const t of ['a', 'b', 'c', 'd', 'e']) {
-    await req('POST', '/posts', validPost({ slug: `p-${t}`, title: t }));
+    await req('POST', '/posts', validPost({ slug: `p-${t}`, title: t }), asAuthor());
   }
 
-  // 第一页
   const p1 = await req('GET', '/posts/feed?limit=2&sortBy=title&order=asc');
   assert.equal(p1.status, 200);
   assert.deepEqual(p1.json.data.items.map((i: any) => i.title), ['a', 'b']);
   assert.equal(p1.json.data.pageInfo.hasMore, true);
   assert.ok(p1.json.data.pageInfo.nextCursor);
 
-  // 第二页：带上 nextCursor
   const c1 = encodeURIComponent(p1.json.data.pageInfo.nextCursor);
   const p2 = await req('GET', `/posts/feed?limit=2&sortBy=title&order=asc&cursor=${c1}`);
   assert.deepEqual(p2.json.data.items.map((i: any) => i.title), ['c', 'd']);
   assert.equal(p2.json.data.pageInfo.hasMore, true);
 
-  // 第三页：最后一条，hasMore=false / nextCursor=null
   const c2 = encodeURIComponent(p2.json.data.pageInfo.nextCursor);
   const p3 = await req('GET', `/posts/feed?limit=2&sortBy=title&order=asc&cursor=${c2}`);
   assert.deepEqual(p3.json.data.items.map((i: any) => i.title), ['e']);
@@ -251,9 +284,8 @@ test('feed：非法 cursor → 400 VALIDATION_ERROR', async () => {
 
 test('feed：默认按 createdAt 倒序翻页，跨页 id 不重不漏', async () => {
   for (const t of ['x1', 'x2', 'x3']) {
-    await req('POST', '/posts', validPost({ slug: t, title: t }));
+    await req('POST', '/posts', validPost({ slug: t, title: t }), asAuthor());
   }
-  // 默认 sortBy=createdAt order=desc —— created_at 是 Timestamptz(3)，游标无精度丢失
   const p1 = await req('GET', '/posts/feed?limit=2');
   assert.equal(p1.status, 200);
   assert.equal(p1.json.data.items.length, 2);
@@ -264,7 +296,6 @@ test('feed：默认按 createdAt 倒序翻页，跨页 id 不重不漏', async (
   assert.equal(p2.json.data.items.length, 1);
   assert.equal(p2.json.data.pageInfo.hasMore, false);
 
-  // 两页合起来正好 3 条、互不重复（不重不漏）
   const seen = [...p1.json.data.items, ...p2.json.data.items].map((i: any) => i.id);
   assert.equal(new Set(seen).size, 3);
 });
@@ -276,21 +307,21 @@ test('search：命中正文里的词，非命中项不返回', async () => {
     slug: 's1',
     title: 'PostgreSQL full text search',
     content: 'tsvector and tsquery make ranking possible',
-  }));
+  }), asAuthor());
   await req('POST', '/posts', validPost({
     slug: 's2',
     title: 'Redis caching basics',
     content: 'nothing relevant to the other topic here at all',
-  }));
+  }), asAuthor());
 
   const r = await req('GET', '/posts/search?q=tsvector');
   assert.equal(r.status, 200);
   assert.equal(r.json.data.items.length, 1);
   assert.equal(r.json.data.items[0].slug, 's1');
   assert.equal(r.json.data.pagination.total, 1);
-  // 搜索结果也要带齐字段（raw SELECT 不能漏 version / viewCount）
   assert.equal(r.json.data.items[0].version, 1);
   assert.equal(r.json.data.items[0].viewCount, 0);
+  assert.equal(r.json.data.items[0].authorId, authorId, '搜索结果也要带 authorId');
 });
 
 test('search：q 缺失 → 400 VALIDATION_ERROR', async () => {
@@ -308,22 +339,21 @@ test('search：q 全是空白 → 400（trim 后空串被 MinLength 拒）', asy
 // ─── Day 29：并发控制（乐观锁 / 原子计数 / 修订）─────────────
 
 test('新建文章 version=1 / viewCount=0', async () => {
-  const r = await req('POST', '/posts', validPost({ slug: 'd29-new' }));
+  const r = await req('POST', '/posts', validPost({ slug: 'd29-new' }), asAuthor());
   assert.equal(r.json.data.version, 1);
   assert.equal(r.json.data.viewCount, 0);
 });
 
 test('update：version 自增，并在事务里留下修订快照', async () => {
-  const created = await req('POST', '/posts', validPost({ slug: 'd29-rev', title: 'v1' }));
+  const created = await req('POST', '/posts', validPost({ slug: 'd29-rev', title: 'v1' }), asAuthor());
   const id = created.json.data.id;
   assert.equal(created.json.data.version, 1);
 
-  const u1 = await req('PATCH', `/posts/${id}`, { title: 'v2' });
+  const u1 = await req('PATCH', `/posts/${id}`, { title: 'v2' }, asAuthor());
   assert.equal(u1.json.data.version, 2);
-  const u2 = await req('PATCH', `/posts/${id}`, { title: 'v3' });
+  const u2 = await req('PATCH', `/posts/${id}`, { title: 'v3' }, asAuthor());
   assert.equal(u2.json.data.version, 3);
 
-  // 两次 update → 两条修订（版本 3、2），新 → 旧
   const revs = await req('GET', `/posts/${id}/revisions`);
   assert.equal(revs.status, 200);
   assert.equal(revs.json.data.length, 2);
@@ -333,35 +363,32 @@ test('update：version 自增，并在事务里留下修订快照', async () => 
 });
 
 test('乐观锁：带正确 version → 成功，version 前进', async () => {
-  const created = await req('POST', '/posts', validPost({ slug: 'd29-ol-ok' }));
+  const created = await req('POST', '/posts', validPost({ slug: 'd29-ol-ok' }), asAuthor());
   const id = created.json.data.id;
-  const r = await req('PATCH', `/posts/${id}`, { title: 'ok', version: 1 });
+  const r = await req('PATCH', `/posts/${id}`, { title: 'ok', version: 1 }, asAuthor());
   assert.equal(r.status, 200);
   assert.equal(r.json.data.version, 2);
 });
 
 test('乐观锁：带过期 version → 409 VERSION_CONFLICT', async () => {
-  const created = await req('POST', '/posts', validPost({ slug: 'd29-ol-conflict' }));
+  const created = await req('POST', '/posts', validPost({ slug: 'd29-ol-conflict' }), asAuthor());
   const id = created.json.data.id;
-  // 先用 version=1 改一次 → 实际 version 变 2
-  await req('PATCH', `/posts/${id}`, { title: 'first', version: 1 });
-  // 再用过期的 version=1 改 → 冲突
-  const r = await req('PATCH', `/posts/${id}`, { title: 'second', version: 1 });
+  await req('PATCH', `/posts/${id}`, { title: 'first', version: 1 }, asAuthor());
+  const r = await req('PATCH', `/posts/${id}`, { title: 'second', version: 1 }, asAuthor());
   assert.equal(r.status, 409);
   assert.equal(r.json.code, 'VERSION_CONFLICT');
   assert.equal(r.json.category, 'business');
 });
 
-test('浏览计数：POST /:id/view 原子自增，不动 version、不产生修订', async () => {
-  const created = await req('POST', '/posts', validPost({ slug: 'd29-view' }));
+test('浏览计数：POST /:id/view 原子自增，不动 version、不产生修订（公开，无需登录）', async () => {
+  const created = await req('POST', '/posts', validPost({ slug: 'd29-view' }), asAuthor());
   const id = created.json.data.id;
-  const v1 = await req('POST', `/posts/${id}/view`);
+  const v1 = await req('POST', `/posts/${id}/view`); // 公开，不带 token
   assert.equal(v1.status, 200);
   assert.equal(v1.json.data.viewCount, 1);
   const v2 = await req('POST', `/posts/${id}/view`);
   assert.equal(v2.json.data.viewCount, 2);
-  assert.equal(v2.json.data.version, 1); // 浏览不是内容变更
-  // 浏览不该改 updatedAt（走裸 SQL 绕开 @updatedAt）
+  assert.equal(v2.json.data.version, 1);
   assert.equal(v2.json.data.updatedAt, created.json.data.updatedAt);
   const revs = await req('GET', `/posts/${id}/revisions`);
   assert.equal(revs.json.data.length, 0);
@@ -369,6 +396,63 @@ test('浏览计数：POST /:id/view 原子自增，不动 version、不产生修
 
 test('浏览计数：不存在的 id → 404', async () => {
   const r = await req('POST', '/posts/00000000-0000-4000-8000-000000000000/view');
+  assert.equal(r.status, 404);
+  assert.equal(r.json.code, 'POST_NOT_FOUND');
+});
+
+// ─── Day 33：RBAC / 资源级权限 ───────────────────────────────
+
+test('创建：不带 token → 401 UNAUTHORIZED', async () => {
+  const r = await req('POST', '/posts', validPost({ slug: 'noauth' }));
+  assert.equal(r.status, 401);
+  assert.equal(r.json.code, 'UNAUTHORIZED');
+});
+
+test('更新：别人的文章 → 403 FORBIDDEN', async () => {
+  const created = await req('POST', '/posts', validPost({ slug: 'owned' }), asAuthor());
+  const id = created.json.data.id;
+  const r = await req('PATCH', `/posts/${id}`, { title: 'hijack' }, asOther());
+  assert.equal(r.status, 403);
+  assert.equal(r.json.code, 'FORBIDDEN');
+  // 没改成
+  const got = await req('GET', `/posts/${id}`);
+  assert.notEqual(got.json.data.title, 'hijack');
+});
+
+test('更新：作者本人 → 200', async () => {
+  const created = await req('POST', '/posts', validPost({ slug: 'mine' }), asAuthor());
+  const id = created.json.data.id;
+  const r = await req('PATCH', `/posts/${id}`, { title: 'updated by owner' }, asAuthor());
+  assert.equal(r.status, 200);
+  assert.equal(r.json.data.title, 'updated by owner');
+});
+
+test('更新：admin 改别人的文章 → 200', async () => {
+  const created = await req('POST', '/posts', validPost({ slug: 'byadmin' }), asAuthor());
+  const id = created.json.data.id;
+  const r = await req('PATCH', `/posts/${id}`, { title: 'updated by admin' }, asAdmin());
+  assert.equal(r.status, 200);
+  assert.equal(r.json.data.title, 'updated by admin');
+});
+
+test('删除：别人的文章 → 403；admin 删任意 → 200', async () => {
+  const created = await req('POST', '/posts', validPost({ slug: 'todelete' }), asAuthor());
+  const id = created.json.data.id;
+  const forbidden = await req('DELETE', `/posts/${id}`, undefined, asOther());
+  assert.equal(forbidden.status, 403);
+  assert.equal(forbidden.json.code, 'FORBIDDEN');
+  const ok = await req('DELETE', `/posts/${id}`, undefined, asAdmin());
+  assert.equal(ok.status, 200);
+  assert.equal(ok.json.data.deleted, true);
+});
+
+test('删除：不存在的文章（先 404，优先于 403）', async () => {
+  const r = await req(
+    'DELETE',
+    '/posts/00000000-0000-4000-8000-000000000000',
+    undefined,
+    asOther(),
+  );
   assert.equal(r.status, 404);
   assert.equal(r.json.code, 'POST_NOT_FOUND');
 });

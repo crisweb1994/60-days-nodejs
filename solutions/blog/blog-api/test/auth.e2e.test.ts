@@ -22,7 +22,7 @@ before(async () => {
   process.env.PAGE_LIMIT = '20';
   process.env.DATABASE_URL ??=
     'postgresql://blog:blog_dev_pwd@localhost:5432/blog?schema=blog_api';
-  process.env.JWT_ACCESS_SECRET ??= 'test-access-secret-at-least-16-chars';
+  process.env.JWT_ACCESS_SECRET ??= 'test-access-secret-at-least-32-chars-long';
 
   app = await NestFactory.create(AppModule, { logger: false });
   app.enableShutdownHooks();
@@ -183,4 +183,41 @@ test('refresh 乱 token → 401 INVALID_REFRESH_TOKEN', async () => {
   const r = await req('POST', '/auth/refresh', { refreshToken: 'not-a-real-token' });
   assert.equal(r.status, 401);
   assert.equal(r.json.code, 'INVALID_REFRESH_TOKEN');
+});
+
+// ─── Day 33：admin-only（@Roles + RolesGuard）────────────────────────
+
+test('GET /auth/users：不带 token → 401 UNAUTHORIZED', async () => {
+  const r = await req('GET', '/auth/users');
+  assert.equal(r.status, 401);
+  assert.equal(r.json.code, 'UNAUTHORIZED');
+});
+
+test('GET /auth/users：普通用户 → 403 FORBIDDEN', async () => {
+  const reg = await req('POST', '/auth/register', validReg());
+  const r = await req('GET', '/auth/users', undefined, {
+    authorization: `Bearer ${reg.json.data.accessToken}`,
+  });
+  assert.equal(r.status, 403);
+  assert.equal(r.json.code, 'FORBIDDEN');
+});
+
+test('GET /auth/users：admin → 200 用户列表（不含 password）', async () => {
+  const reg = await req('POST', '/auth/register', validReg());
+  // 提到 admin 再重新登录拿带 admin 角色的 token
+  await prisma.user.update({
+    where: { id: reg.json.data.user.id },
+    data: { role: 'admin' },
+  });
+  const login = await req('POST', '/auth/login', {
+    email: validReg().email,
+    password: validReg().password,
+  });
+  const r = await req('GET', '/auth/users', undefined, {
+    authorization: `Bearer ${login.json.data.accessToken}`,
+  });
+  assert.equal(r.status, 200);
+  assert.ok(Array.isArray(r.json.data));
+  assert.ok(r.json.data.length >= 1);
+  assert.equal(r.json.data[0].password, undefined, '不能泄露 password');
 });

@@ -96,6 +96,15 @@ export class AuthService {
     return this.toUserResponse(user);
   }
 
+  // Day 33：列出所有用户（仅 admin，路由层用 @Roles('admin') 把关）。脱敏后返回。
+  async listUsers() {
+    const users = await this.prisma.user.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    return users.map((u) => this.toUserResponse(u));
+  }
+
   private authResponse(user: User, tokens: IssuedTokens) {
     return { ...tokens, tokenType: 'Bearer', user: this.toUserResponse(user) };
   }

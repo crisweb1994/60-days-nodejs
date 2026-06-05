@@ -59,6 +59,10 @@ async function expectBizError(fn: () => Promise<unknown>, bizCode: string) {
   });
 }
 
+// Day 33：操作者（actor）
+const ADMIN = { sub: 'admin-id', role: 'admin' };
+const owner = (sub: string) => ({ sub, role: 'user' });
+
 // ─── findOne ────────────────────────────────────────────────────────
 
 test('findOne：仓储查不到 → 抛 POST_NOT_FOUND', async () => {
@@ -88,12 +92,10 @@ test('create：slug 已存在 → 抛 SLUG_TAKEN，不调用 repo.create', async
   );
   await expectBizError(
     () =>
-      service.create({
-        title: 'x',
-        slug: 'taken',
-        content: 'long enough',
-        status: 'draft',
-      } as any),
+      service.create(
+        { title: 'x', slug: 'taken', content: 'long enough', status: 'draft' } as any,
+        'author-1',
+      ),
     'SLUG_TAKEN',
   );
   assert.equal(createCalled, false, 'slug 撞名时不应该再写库');
@@ -110,14 +112,13 @@ test('create：slug 空闲 → tags 缺省补成空数组后落库', async () =>
       },
     }),
   );
-  await service.create({
-    title: 'New',
-    slug: 'new',
-    content: 'long enough',
-    status: 'published',
-  } as any);
+  await service.create(
+    { title: 'New', slug: 'new', content: 'long enough', status: 'published' } as any,
+    'author-1',
+  );
   assert.deepEqual(received.tags, [], 'tags 未提供时 Service 应传 []');
   assert.equal(received.status, 'published');
+  assert.equal(received.authorId, 'author-1', 'Day 33：作者 = 当前用户');
 });
 
 // ─── update ─────────────────────────────────────────────────────────
@@ -126,7 +127,7 @@ test('update：文章已归档 → 抛 POST_ARCHIVED', async () => {
   const archived = fakePost({ status: 'archived' });
   const service = new PostsService(mockRepo({ findById: async () => archived }));
   await expectBizError(
-    () => service.update(archived.id, { title: 'new' } as any),
+    () => service.update(archived.id, { title: 'new' } as any, ADMIN),
     'POST_ARCHIVED',
   );
 });
@@ -140,7 +141,7 @@ test('update：改 slug 撞别人 → 抛 SLUG_TAKEN', async () => {
     }),
   );
   await expectBizError(
-    () => service.update(current.id, { slug: 'taken' } as any),
+    () => service.update(current.id, { slug: 'taken' } as any, ADMIN),
     'SLUG_TAKEN',
   );
 });
@@ -158,26 +159,96 @@ test('update：只把"显式提供的字段"传给仓储（undefined 不覆盖�
     }),
   );
   // 只改 title，其余字段为 undefined
-  await service.update(current.id, {
-    title: 'new title',
-    content: undefined,
-    tags: undefined,
-  } as any);
+  await service.update(
+    current.id,
+    { title: 'new title', content: undefined, tags: undefined } as any,
+    ADMIN,
+  );
   assert.deepEqual(Object.keys(patchSeen), ['title'], '只应携带 title 这一个 key');
   assert.equal(patchSeen.title, 'new title');
 });
 
 // ─── remove ─────────────────────────────────────────────────────────
 
-test('remove：仓储返回 false → 抛 POST_NOT_FOUND', async () => {
-  const service = new PostsService(mockRepo({ remove: async () => false }));
-  await expectBizError(() => service.remove('no-such-id'), 'POST_NOT_FOUND');
+test('remove：文章不存在 → POST_NOT_FOUND（findOne 先拦）', async () => {
+  const service = new PostsService(mockRepo({ findById: async () => null }));
+  await expectBizError(() => service.remove('no-such-id', ADMIN), 'POST_NOT_FOUND');
 });
 
-test('remove：仓储返回 true → { deleted: true, id }', async () => {
-  const service = new PostsService(mockRepo({ remove: async () => true }));
-  const r = await service.remove('some-id');
+test('remove：存在且有权限，仓储 true → { deleted: true, id }', async () => {
+  const service = new PostsService(
+    mockRepo({ findById: async () => fakePost(), remove: async () => true }),
+  );
+  const r = await service.remove('some-id', ADMIN);
   assert.deepEqual(r, { deleted: true, id: 'some-id' });
+});
+
+// ─── Day 33：资源级权限（owner / admin）─────────────────────────────
+
+test('update：非作者非 admin → FORBIDDEN', async () => {
+  const post = fakePost({ authorId: 'alice' });
+  const service = new PostsService(mockRepo({ findById: async () => post }));
+  await expectBizError(
+    () => service.update(post.id, { title: 'x' } as any, owner('bob')),
+    'FORBIDDEN',
+  );
+});
+
+test('update：作者本人 → 放行', async () => {
+  const post = fakePost({ authorId: 'alice', slug: 'a' });
+  let called = false;
+  const service = new PostsService(
+    mockRepo({
+      findById: async () => post,
+      update: async (_id, patch) => {
+        called = true;
+        return fakePost(patch as Partial<Post>);
+      },
+    }),
+  );
+  await service.update(post.id, { title: 'x' } as any, owner('alice'));
+  assert.equal(called, true);
+});
+
+test('update：admin 改别人的文章 → 放行', async () => {
+  const post = fakePost({ authorId: 'alice', slug: 'a' });
+  let called = false;
+  const service = new PostsService(
+    mockRepo({
+      findById: async () => post,
+      update: async (_id, patch) => {
+        called = true;
+        return fakePost(patch as Partial<Post>);
+      },
+    }),
+  );
+  await service.update(post.id, { title: 'x' } as any, ADMIN);
+  assert.equal(called, true);
+});
+
+test('update：无主文章（authorId 空）只有 admin 能改', async () => {
+  const post = fakePost({ authorId: undefined });
+  const service = new PostsService(mockRepo({ findById: async () => post }));
+  await expectBizError(
+    () => service.update(post.id, { title: 'x' } as any, owner('bob')),
+    'FORBIDDEN',
+  );
+});
+
+test('remove：非作者非 admin → FORBIDDEN，且不调用 repo.remove', async () => {
+  let removeCalled = false;
+  const post = fakePost({ authorId: 'alice' });
+  const service = new PostsService(
+    mockRepo({
+      findById: async () => post,
+      remove: async () => {
+        removeCalled = true;
+        return true;
+      },
+    }),
+  );
+  await expectBizError(() => service.remove(post.id, owner('bob')), 'FORBIDDEN');
+  assert.equal(removeCalled, false, '权限不足时不应删除');
 });
 
 // ─── feed（游标分页）─────────────────────────────────────────────────
@@ -235,7 +306,7 @@ test('update：version 作为 expectedVersion 传给仓储，且不混进 patch'
       },
     }),
   );
-  await service.update(current.id, { title: 'new', version: 3 } as any);
+  await service.update(current.id, { title: 'new', version: 3 } as any, ADMIN);
   assert.equal(seenVersion, 3, 'version 应作为第三个参数传给仓储');
   assert.deepEqual(Object.keys(seenPatch), ['title'], 'version 不应混进 patch');
 });

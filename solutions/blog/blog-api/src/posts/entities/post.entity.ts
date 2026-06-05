@@ -17,6 +17,8 @@ export interface Post {
   tags: string[];
   status: PostStatus;
   meta?: PostMeta;
+  // Day 33：作者 id（资源级权限的 owner）。老文章可能为 null（无主）。
+  authorId?: string;
   // Day 29：乐观锁版本号，每次成功 update 自增 1
   version: number;
   // Day 29：浏览计数，原子自增

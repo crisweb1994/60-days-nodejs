@@ -64,8 +64,14 @@ model Post {
   // ★ Day 29 —— 修订历史。每次 update 在同一事务里快照一条，体现事务原子性。
   revisions PostRevision[]
 
+  // ★ Day 33 —— 作者，资源级权限的 "owner"。可空：迁移前建的老文章无作者，视为"无主"
+  //   只有 admin 能改；删用户时把文章 author 置空（SetNull），不级联删文章。
+  authorId String? @map("author_id") @db.Uuid
+  author   User?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
   // ★ 列表接口最常见的排序是"按状态过滤 + 按时间倒序"，给它一个联合索引
   @@index([status, createdAt])
+  @@index([authorId])
   @@map("posts")
 }
 
@@ -105,6 +111,7 @@ model User {
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   refreshTokens RefreshToken[]
+  posts         Post[] // Day 33：用户写的文章
 
   @@map("users")
 }

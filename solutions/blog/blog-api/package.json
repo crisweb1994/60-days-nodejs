@@ -13,9 +13,9 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "db:reset": "prisma migrate reset --force",
-    "test": "node --test -r ts-node/register test/*.test.ts",
+    "test": "node --test --test-concurrency=1 -r ts-node/register test/*.test.ts",
     "test:unit": "node --test -r ts-node/register test/*.unit.test.ts",
-    "test:e2e": "node --test -r ts-node/register test/*.e2e.test.ts"
+    "test:e2e": "node --test --test-concurrency=1 -r ts-node/register test/*.e2e.test.ts"
   },
   "prisma": {
     "schema": "prisma/schema.prisma"

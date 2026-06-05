@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <strong>🚧 WIP：</strong> 当前已完整整理 <strong>Day 1-32</strong>（阶段一 + 阶段二全部 + 阶段三的认证基础与 JWT 实战，含 NestJS + Prisma + PostgreSQL 博客 API v1.0 里程碑、可运行参考实现），Day 33-60 正在持续补充详细讲解、练习与参考答案。
+  <strong>🚧 WIP：</strong> 当前已完整整理 <strong>Day 1-33</strong>（阶段一 + 阶段二全部 + 阶段三的认证授权：Session/JWT、注册登录、RBAC，含 NestJS + Prisma + PostgreSQL 博客 API v1.0 里程碑、可运行参考实现），Day 34-60 正在持续补充详细讲解、练习与参考答案。
 </p>
 
 <p align="center">
@@ -39,7 +39,7 @@
 
 这个仓库的目标是：**用 60 天时间，帮助有前端基础的工程师系统掌握 Node.js 全栈开发**，从核心原理到生产部署，逐步建立完整的全栈知识体系和项目交付能力。
 
-> 当前状态说明：仓库已完整完成 **Day 1-32**——**阶段一**（Node.js 核心，Day 1-15）+ **阶段二**（后端框架与数据库，Day 16-30）全部正文、练习与可运行参考实现，博客 API 已封版到 **v1.0**（NestJS + Prisma + PostgreSQL，含分页/搜索/并发控制/OpenAPI 文档）；**阶段三**（认证、安全与缓存，Day 31-40）进行中——Day 31 认证基础（Session vs JWT，含手写 JWT playground）+ Day 32 JWT 认证实战（注册/登录、bcrypt、Access+Refresh 双 Token 已接入 blog-api）完成。**Day 33-60** 已建立路线图与每日页面骨架，详细正文、练习模板与参考答案会继续迭代补充。
+> 当前状态说明：仓库已完整完成 **Day 1-32**——**阶段一**（Node.js 核心，Day 1-15）+ **阶段二**（后端框架与数据库，Day 16-30）全部正文、练习与可运行参考实现，博客 API 已封版到 **v1.0**（NestJS + Prisma + PostgreSQL，含分页/搜索/并发控制/OpenAPI 文档）；**阶段三**（认证、安全与缓存，Day 31-40）进行中——Day 31 认证基础（Session vs JWT）+ Day 32 JWT 实战（注册/登录、bcrypt、Access+Refresh 双 Token）+ Day 33 RBAC 授权（角色守卫 + 资源级权限，已接入 blog-api）完成。**Day 34-60** 已建立路线图与每日页面骨架，详细正文、练习模板与参考答案会继续迭代补充。
 
 ### 这个仓库有什么特点？
 
@@ -95,7 +95,7 @@ cd days/day-01
 - 按天推进，共 60 天完成完整学习闭环
 - 每天投入 3 到 4 小时，兼顾系统学习与动手实践
 - 建议按顺序学习，避免跳过阶段性里程碑
-- Day 1-32 已有完整正文与可运行参考实现，建议按顺序学完；Day 33 起可结合路线图、推荐资源和你自己的练习持续推进
+- Day 1-33 已有完整正文与可运行参考实现，建议按顺序学完；Day 34 起可结合路线图、推荐资源和你自己的练习持续推进
 
 ### 学习建议
 
@@ -261,7 +261,7 @@ cd days/day-01
 │   ├── blog/                   # 博客系统（Day 16-30）
 │   │   ├── blog-db/            # 裸 SQL：Docker PG + migrations + 练习
 │   │   ├── blog-prisma/        # Prisma playground（Day 25-26）
-│   │   └── blog-api/           # 生产级 NestJS API（Day 27-30 v1.0 + Day 32 JWT 认证）
+│   │   └── blog-api/           # 生产级 NestJS API（v1.0 + Day 32 JWT 认证 + Day 33 RBAC）
 │   └── auth-basics/            # Day 31：手写 JWT + Session vs JWT 对比（零依赖）
 ├── cheatsheets/                # 速查手册
 │   ├── sql-cheatsheet.md

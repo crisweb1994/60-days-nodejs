@@ -6,6 +6,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { RolesGuard } from './guards/roles.guard';
 import { TokensService } from './tokens.service';
 
 @Module({
@@ -30,6 +31,10 @@ import { TokensService } from './tokens.service';
   ],
   controllers: [AuthController],
   // PrismaService 由全局 PrismaModule 提供，这里直接注入
-  providers: [AuthService, TokensService, JwtAuthGuard],
+  providers: [AuthService, TokensService, JwtAuthGuard, RolesGuard],
+  // ★ 关键：导出 JwtModule（连带 JwtService）。@UseGuards(JwtAuthGuard) 是在**控制器所在
+  //   模块**里实例化守卫的——PostsController 用它时，Nest 在 PostsModule 上下文重建守卫，
+  //   需要 JwtService 在那边可解析。只导出守卫类不够，必须把 JwtModule 也 re-export 出去。
+  exports: [JwtAuthGuard, RolesGuard, JwtModule],
 })
 export class AuthModule {}
