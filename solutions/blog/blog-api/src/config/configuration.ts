@@ -14,6 +14,13 @@ export default function configuration(env: Env) {
       accessTtl: env.JWT_ACCESS_TTL, // 秒
       refreshTtlDays: env.REFRESH_TTL_DAYS,
     },
+    oauth: {
+      github: {
+        clientId: env.GITHUB_CLIENT_ID,
+        clientSecret: env.GITHUB_CLIENT_SECRET,
+        callbackUrl: env.GITHUB_CALLBACK_URL,
+      },
+    },
     cors: {
       origin: env.CORS_ORIGIN.split(',')
         .map((s) => s.trim())

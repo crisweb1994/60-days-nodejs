@@ -1,6 +1,6 @@
 # Blog API — NestJS + Prisma + PostgreSQL（阶段二里程碑 v1.0）
 
-> 演进路线：Day 20 内存版里程碑 → Day 27 接入 PostgreSQL → Day 28 分页/搜索 → Day 29 并发控制 → Day 30 OpenAPI 文档（v1.0）→ Day 32 JWT 认证 → **Day 33 RBAC 授权**。各天细节见下方对应小节与 `days/` 下的 README。
+> 演进路线：Day 20 内存版里程碑 → Day 27 接入 PostgreSQL → Day 28 分页/搜索 → Day 29 并发控制 → Day 30 OpenAPI 文档（v1.0）→ Day 32 JWT 认证 → Day 33 RBAC 授权 → **Day 34 OAuth/GitHub 登录**。各天细节见下方对应小节与 `days/` 下的 README。
 
 Day 16–19 的知识点整合成一个能跑、能交接、能在切 PostgreSQL 时不返工的完整项目（Day 20 里程碑）。**Day 27 兑现了当初的承诺**：把内存仓储换成 Prisma + PostgreSQL，Service / Controller / DTO / Filter 一行未改——见下方「Day 27 更新」。**Day 28** 给列表加 cursor 分页和全文搜索——见「Day 28 更新」。
 
@@ -79,6 +79,19 @@ Day 20 留了个伏笔——所有 Repository 方法都返回 `Promise`，Servic
 
 详细讲解见 [Day 33 README](../../../days/day-33/)。
 
+## Day 34 更新：OAuth 2.0 / GitHub 第三方登录
+
+在自建账号体系之外，再接一条"用 GitHub 登录"的路径——授权码模式（Authorization Code Flow）：
+
+- 新增 `auth/oauth/`：`GithubOAuthProvider`（所有打 GitHub 的 HTTP 收在这一层）、`OAuthStateStore`（防 CSRF 的一次性 `state`）、`GithubCallbackDto`
+- `GET /auth/github`：生成 `state` → **302 跳转** GitHub 授权页（`@Res()` 手动发，绕过统一 envelope）；没配 client id/secret → 503 `OAUTH_NOT_CONFIGURED`
+- `GET /auth/github/callback`：校验 `state`（一次性消费）→ 后端拿 `code` + `client_secret` 换 token → 读 `/user` → **发我们自己的 JWT + refresh**
+- **`client_secret` 只在后端**（`exchangeCodeForToken`）出现，绝不下发前端——这是授权码模式 vs 已弃用的隐式模式的安全核心
+- `User.password` 改**可空**（纯第三方用户无密码）、新增 `githubId`（唯一，身份锚点）；`loginWithGithub` 三步绑定：按 `githubId` 命中 → 按已验证邮箱关联老账号 → 否则建号
+- 配置加可选的 `GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET / GITHUB_CALLBACK_URL`（不配不影响启动，仅禁用 GitHub 登录）
+
+详细讲解见 [Day 34 README](../../../days/day-34/)。
+
 ## 涵盖今日产出
 
 - [x] 目录按 `common / config / feature / health` 重组
@@ -88,14 +101,14 @@ Day 20 留了个伏笔——所有 Repository 方法都返回 `Promise`，Servic
 - [x] `requestId` 在响应头 / 响应体 / 日志三处一致
 - [x] `/health` 端点 + `enableShutdownHooks`
 - [x] `QueryPostDto` 支持分页 / 排序 / 关键字 / 状态过滤，`limit` 有上限（最大 100）
-- [x] E2E + 单元测试全绿（Day 33：posts 33 个 + auth 16 个 = 49 个 E2E，外加 35 个单元测试；e2e 用 `--test-concurrency=1` 串行跑）
+- [x] E2E + 单元测试全绿（Day 34：posts 33 + auth 16 + oauth 8 = 57 个 E2E，外加 41 个单元测试；e2e 用 `--test-concurrency=1` 串行跑）
 
 ## 目录结构
 
 ```
 prisma/
-├── schema.prisma                        # Post + PostRevision（Day 29），migrate 管理
-├── migrations/                          # Day 27：初始建表 SQL（提交到版本库）
+├── schema.prisma                        # Post/PostRevision(D29) + User/RefreshToken(D32) + githubId(D34)
+├── migrations/                          # 历次建表/改表 SQL（append-only，提交到版本库）
 └── sql/001_search_indexes.sql           # Day 28：FTS / trigram 索引（手动应用，见下）
 src/
 ├── main.ts                              # 只做装配：bootstrap / CORS / shutdown
@@ -128,14 +141,18 @@ src/
 │   └── health.controller.ts             # GET /health
 ├── auth/                                # Day 32：认证
 │   ├── auth.module.ts                   # JwtModule.registerAsync + 注入 ConfigService
-│   ├── auth.controller.ts               # register / login / refresh / logout / me / users(admin)
-│   ├── auth.service.ts                  # bcrypt + 防用户枚举 + 出口脱敏 + listUsers
+│   ├── auth.controller.ts               # register/login/refresh/logout/me/users + github/callback(Day34)
+│   ├── auth.service.ts                  # bcrypt + 防用户枚举 + 出口脱敏 + listUsers + loginWithGithub(Day34)
 │   ├── tokens.service.ts                # access(JWT) + refresh(随机 / 存哈希 / 轮换)
 │   ├── guards/jwt-auth.guard.ts         # 认证：校验 Bearer，挂 req.user
 │   ├── guards/roles.guard.ts            # Day 33：纯角色 RBAC（Reflector 读 @Roles）
 │   ├── decorators/current-user.decorator.ts
 │   ├── decorators/roles.decorator.ts    # Day 33：@Roles('admin')
-│   └── dto/                             # register / login / refresh / auth-response
+│   ├── oauth/                           # Day 34：OAuth / GitHub 登录
+│   │   ├── github-oauth.provider.ts     # 打 GitHub 的 HTTP（换 token / 拉资料），唯一用 client_secret 处
+│   │   ├── oauth-state.store.ts         # 防 CSRF 的一次性 state（内存版，生产用 Redis）
+│   │   └── dto/github-callback.dto.ts   # 回调 query：code / state / ō;:>op21Aerror
+ª│   └── dto/                             # register / login / refresh / auth-response
 └── posts/
     ├── posts.module.ts                  # POSTS_REPOSITORY token → PrismaPostsRepository
     ├── posts.controller.ts              # /posts(offset) + /posts/feed(cursor) + /posts/search(FTS)
@@ -201,6 +218,8 @@ pnpm test                           # 两层都跑（需要 PG）
 | POST   | `/auth/logout` | 登出（作废 refresh） | 200 |
 | GET    | `/auth/me` | 当前用户（需 Bearer access token） | 200 |
 | GET    | `/auth/users` | 列出所有用户（**仅 admin**） | 200 |
+| GET    | `/auth/github` | 发起 GitHub 登录（**302** 跳授权页） | 302 |
+| GET    | `/auth/github/callback` | GitHub 回调（校验 state → 发本系统 Token） | 200 |
 | GET    | `/health` | 健康检查（不进访问日志） | 200 |
 | GET    | `/posts` | 列表 + offset 分页 + 过滤 | 200 |
 | GET    | `/posts/feed` | 列表 + cursor 分页（信息流） | 200 |
@@ -281,6 +300,9 @@ pnpm test                           # 两层都跑（需要 PG）
 | `INVALID_REFRESH_TOKEN` | 401 | refresh 无效/过期 | 刷新时 refresh 不存在/已撤销/已过期 |
 | `UNAUTHORIZED` | 401 | 未认证 | 受保护接口缺少/无效的 access token |
 | `FORBIDDEN` | 403 | 无权限 | 改/删非自己的文章（非 admin）；访问 admin-only 接口 |
+| `OAUTH_STATE_INVALID` | 401 | state 无效 | GitHub 回调 `state` 缺失/伪造/已用过（防 CSRF/重放）|
+| `OAUTH_FAILED` | 401 | OAuth 失败 | 用户拒绝授权，或换 token / 拉资料失败 |
+| `OAUTH_NOT_CONFIGURED` | 503 | 未配置 OAuth | 未设 `GITHUB_CLIENT_ID/SECRET` 就访问 `/auth/github` |
 | `INTERNAL_ERROR`（占位） | 500 | 服务端错误 | 任何未捕获异常，响应固定文案 `服务器内部错误` |
 
 > 业务错误（`POST_NOT_FOUND` / `SLUG_TAKEN` / `POST_ARCHIVED`）走控制器级 `BusinessExceptionFilter`，响应多一个 `category: 'business'` 字段，便于前端按维度统计。

@@ -104,7 +104,10 @@ model User {
   email    String @unique @db.VarChar(255)
   username String @unique @db.VarChar(50)
   // ★ 只存 bcrypt 哈希（60 字符），永远不存明文。VarChar(255) 给将来换 argon2 留余量。
-  password String @db.VarChar(255)
+  // Day 34：可空——纯第三方（GitHub）登录的用户没有密码。
+  password String? @db.VarChar(255)
+  // ★ Day 34：GitHub 用户数字 id（存成字符串）。绑定后用它定位用户；唯一。
+  githubId String? @unique @map("github_id") @db.VarChar(32)
   // role 为 Day 33 RBAC 预留；默认 user
   role      String   @default("user") @db.VarChar(20)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)

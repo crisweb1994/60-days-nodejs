@@ -1,10 +1,12 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma, type User } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { randomBytes } from 'node:crypto';
 import { ErrorCodes } from '../common/constants/error-codes';
 import { BusinessException } from '../common/exceptions/business.exception';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
+import type { GithubUser } from './oauth/github-oauth.provider';
 import { RegisterDto } from './dto/register.dto';
 import { IssuedTokens, TokensService } from './tokens.service';
 
@@ -103,6 +105,53 @@ export class AuthService {
       take: 100,
     });
     return users.map((u) => this.toUserResponse(u));
+  }
+
+  // Day 34：用 GitHub 资料登录/注册本系统，发我们自己的 token。三步绑定策略：
+  async loginWithGithub(gh: GithubUser) {
+    // 1) 已绑过 GitHub → 直接是这个人
+    let user = await this.prisma.user.findUnique({ where: { githubId: gh.id } });
+
+    // 2) 没绑过，但邮箱已注册 → 关联到已有账号（信任 GitHub 已验证的主邮箱）
+    if (!user && gh.email) {
+      const existing = await this.prisma.user.findUnique({ where: { email: gh.email } });
+      if (existing) {
+        user = await this.prisma.user.update({
+          where: { id: existing.id },
+          data: { githubId: gh.id },
+        });
+      }
+    }
+
+    // 3) 全新用户 → 建号。无密码（password: null，只能用 GitHub 登录）；
+    //    邮箱缺失就用 GitHub 的 noreply 占位，保证 email 唯一不冲突。
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          email: gh.email ?? `${gh.id}+${gh.login}@users.noreply.github.com`,
+          username: await this.uniqueUsername(gh.login),
+          githubId: gh.id,
+          password: null,
+        },
+      });
+    }
+
+    return this.authResponse(user, await this.tokens.issue(user));
+  }
+
+  // 把 GitHub login 洗成合法且唯一的 username（撞了就补随机后缀）
+  private async uniqueUsername(base: string): Promise<string> {
+    let cleaned = base.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40);
+    if (cleaned.length < 3) cleaned = `gh-${cleaned || 'user'}`;
+    for (let i = 0; i < 5; i++) {
+      const candidate = i === 0 ? cleaned : `${cleaned}-${randomBytes(2).toString('hex')}`;
+      const exists = await this.prisma.user.findUnique({
+        where: { username: candidate },
+        select: { id: true },
+      });
+      if (!exists) return candidate;
+    }
+    return `${cleaned}-${randomBytes(4).toString('hex')}`;
   }
 
   private authResponse(user: User, tokens: IssuedTokens) {

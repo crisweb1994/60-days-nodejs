@@ -31,6 +31,13 @@ export const envSchema = z.object({
   JWT_ACCESS_TTL: z.coerce.number().int().min(60).default(900),
   // refresh token 存活天数，默认 7 天
   REFRESH_TTL_DAYS: z.coerce.number().int().min(1).default(7),
+
+  // Day 34：GitHub OAuth（可选——没配 client id/secret 就禁用 GitHub 登录，不影响启动）
+  GITHUB_CLIENT_ID: z.string().optional(),
+  GITHUB_CLIENT_SECRET: z.string().optional(),
+  GITHUB_CALLBACK_URL: z
+    .string()
+    .default('http://localhost:3000/auth/github/callback'),
 }).superRefine((env, ctx) => {
   // 生产环境拒绝使用 .env.example 的示例 secret——占位值上线 = 谁都能伪造 token
   if (env.NODE_ENV === 'production' && env.JWT_ACCESS_SECRET === EXAMPLE_JWT_SECRET) {
