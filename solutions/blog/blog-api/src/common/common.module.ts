@@ -16,6 +16,7 @@ import { TimingInterceptor } from './interceptors/timing.interceptor';
 import { TransformInterceptor } from './interceptors/transform.interceptor';
 import { HttpLoggerMiddleware } from './middleware/http-logger.middleware';
 import { RequestIdMiddleware } from './middleware/request-id.middleware';
+import { SecurityHeadersMiddleware } from './middleware/security-headers.middleware';
 
 interface FieldError {
   field: string;
@@ -66,6 +67,9 @@ function flattenErrors(errors: ValidationError[], parentPath = ''): FieldError[]
 })
 export class CommonModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
+    // 安全响应头要挂在所有路由上（含 /health）——所以单独一条链，不跟"排除了 /health"的日志链混用
+    consumer.apply(SecurityHeadersMiddleware).forRoutes('*');
+
     consumer
       .apply(RequestIdMiddleware, HttpLoggerMiddleware)
       // /health 不进访问日志：会被探针高频调用，日志量没价值

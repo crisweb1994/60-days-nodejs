@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { ErrorCodes } from '../constants/error-codes';
 
 // 兜底过滤器：@Catch() 不传参 → 接所有异常
 // 处理策略：
@@ -30,6 +31,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const raw = isHttp ? exception.getResponse() : null;
     const payload: Record<string, any> =
       typeof raw === 'string' ? { message: raw } : (raw as Record<string, any>) ?? {};
+
+    // Day 35：ThrottlerException 是个 HttpException(429)，getResponse() 只给了一串文案，
+    // 没有业务 code。这里把 429 统一翻译成 RATE_LIMITED，让前端用同一套错误码逻辑处理。
+    if (status === HttpStatus.TOO_MANY_REQUESTS) {
+      payload.code = ErrorCodes.RATE_LIMITED;
+      payload.message = '请求过于频繁，请稍后再试';
+    }
 
     // 5xx 是服务端责任，必须能复盘；4xx 是客户端责任，量大时不打
     if (!isHttp) {

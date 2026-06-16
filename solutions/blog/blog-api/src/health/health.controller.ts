@@ -1,6 +1,10 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 
+// Day 35：探针会高频打 /health（每个容器几秒一次），从同一个内网 IP 来——
+// 不豁免的话，限流会把它误伤成 429，探针以为服务挂了。所以显式跳过限流。
+@SkipThrottle()
 @ApiTags('health')
 @Controller('health')
 export class HealthController {

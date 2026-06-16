@@ -26,6 +26,11 @@ export default function configuration(env: Env) {
         .map((s) => s.trim())
         .filter(Boolean),
     },
+    // Day 35：限流。ttl 在 env 里是秒（人读），这里换算成毫秒交给 @nestjs/throttler。
+    rateLimit: {
+      ttlMs: env.RATE_LIMIT_TTL * 1000,
+      limit: env.RATE_LIMIT_LIMIT,
+    },
     pagination: {
       defaultLimit: env.PAGE_LIMIT,
       maxLimit: 100,

@@ -32,6 +32,12 @@ export const envSchema = z.object({
   // refresh token 存活天数，默认 7 天
   REFRESH_TTL_DAYS: z.coerce.number().int().min(1).default(7),
 
+  // Day 35：限流。这是"每 IP 在窗口内最多多少请求"的"总闸"，默认给得宽（1000/分钟），
+  // 不挡正常用户，只兜底暴力刷。登录 / 注册这条高风险路径在控制器上用 @Throttle 单独再收紧。
+  // ttl 单位是秒（给人类读），进 configuration 时换算成毫秒（throttler 要 ms）。
+  RATE_LIMIT_TTL: z.coerce.number().int().min(1).default(60),
+  RATE_LIMIT_LIMIT: z.coerce.number().int().min(1).default(1000),
+
   // Day 34：GitHub OAuth（可选——没配 client id/secret 就禁用 GitHub 登录，不影响启动）
   GITHUB_CLIENT_ID: z.string().optional(),
   GITHUB_CLIENT_SECRET: z.string().optional(),

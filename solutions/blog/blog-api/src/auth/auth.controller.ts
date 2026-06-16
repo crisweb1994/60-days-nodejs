@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { ErrorCodes } from '../common/constants/error-codes';
 import {
@@ -38,6 +39,10 @@ import { OAuthStateStore } from './oauth/oauth-state.store';
 
 // 和 PostsController 一样挂 BusinessExceptionFilter：让 Service / Guard 抛的 BusinessException
 // 走统一错误外壳（含 category:'business'）。Guard 抛的异常也会被这个 filter 接住。
+// Day 35：认证接口是暴力破解 / 撞库的主战场，比全局默认（1000/分钟）紧得多——
+// 每 IP 每分钟最多 30 次覆盖注册 / 登录 / 刷新 / 登出 / OAuth。正常用户单次会话远到不了这个量。
+// 真要对抗分布式撞库，单机限流不够，得在网关 / Redis 上做（Day 36 起）。
+@Throttle({ default: { limit: 30, ttl: 60000 } })
 @ApiTags('auth')
 @UseFilters(BusinessExceptionFilter)
 @Controller('auth')

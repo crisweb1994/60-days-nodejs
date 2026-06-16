@@ -7,6 +7,8 @@ export const ErrorCodes = {
   FORBIDDEN: 'FORBIDDEN',
   NOT_FOUND: 'NOT_FOUND',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
+  // Day 35：被限流（ThrottlerException 抛 429）。给个业务码，前端能和其它 4xx 一样走统一错误分支
+  RATE_LIMITED: 'RATE_LIMITED',
 
   // 文章
   POST_NOT_FOUND: 'POST_NOT_FOUND',
