@@ -4,6 +4,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
 import { AuthModule } from './auth/auth.module';
+import { CacheModule } from './cache/cache.module';
 import { CommonModule } from './common/common.module';
 import configuration from './config/configuration';
 import { validateEnv } from './config/config.validation';
@@ -35,6 +36,8 @@ import { PostsModule } from './posts/posts.module';
       ],
     }),
     CommonModule, // 全局 Filter / Interceptor / Pipe + Middleware 都在这里
+    // Day 36：Redis 缓存。@Global 模块，任何模块都能直接注入 RedisService。
+    CacheModule,
     HealthModule,
     AuthModule, // Day 32：注册 / 登录 / JWT
     PostsModule,

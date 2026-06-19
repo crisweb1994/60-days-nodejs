@@ -12,9 +12,11 @@ import type { ValidationError } from 'class-validator';
 
 import { ErrorCodes } from './constants/error-codes';
 import { AllExceptionsFilter } from './filters/all-exceptions.filter';
+import { CacheHeaderInterceptor } from './interceptors/cache-header.interceptor';
 import { TimingInterceptor } from './interceptors/timing.interceptor';
 import { TransformInterceptor } from './interceptors/transform.interceptor';
 import { HttpLoggerMiddleware } from './middleware/http-logger.middleware';
+import { RequestContextMiddleware } from './middleware/request-context.middleware';
 import { RequestIdMiddleware } from './middleware/request-id.middleware';
 import { SecurityHeadersMiddleware } from './middleware/security-headers.middleware';
 
@@ -44,6 +46,9 @@ function flattenErrors(errors: ValidationError[], parentPath = ''): FieldError[]
     // 注册顺序就是执行顺序：Timing 在最外层，能测到全链路耗时
     // 写反（Timing 在内层）会让统计值偏小
     { provide: APP_INTERCEPTOR, useClass: TimingInterceptor },
+    // Day 36：把 service 写进请求上下文的缓存命中状态，写成 X-Cache 响应头（纯可观测）。
+    // 排在 Transform 前/后都行——它只在 tap 里设 header，不改响应体。
+    { provide: APP_INTERCEPTOR, useClass: CacheHeaderInterceptor },
     { provide: APP_INTERCEPTOR, useClass: TransformInterceptor },
     // 全局 ValidationPipe：注意 main.ts 不要再 useGlobalPipes，否则会跑两遍
     {
@@ -67,6 +72,10 @@ function flattenErrors(errors: ValidationError[], parentPath = ''): FieldError[]
 })
 export class CommonModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
+    // Day 36：请求上下文（CLS）必须【最先】挂——它在最外层 .run(store, next) 开上下文，
+    // 后续所有中间件 / controller / service / 拦截器都在这个 store 里，X-Cache 状态才传得出去。
+    consumer.apply(RequestContextMiddleware).forRoutes('*');
+
     // 安全响应头要挂在所有路由上（含 /health）——所以单独一条链，不跟"排除了 /health"的日志链混用
     consumer.apply(SecurityHeadersMiddleware).forRoutes('*');
 

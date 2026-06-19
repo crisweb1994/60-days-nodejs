@@ -20,6 +20,28 @@ services:
       retries: 10
       start_period: 5s
 
+  # Day 36：Redis 缓存。和 PG 同一份 compose，`docker compose up -d` 一起起。
+  # redis-cli 连进来看缓存：docker exec -it redis-blog redis-cli
+  redis:
+    image: redis:7-alpine
+    container_name: redis-blog
+    restart: unless-stopped
+    # 关掉持久化：缓存丢了无所谓（重新从 DB 回填即可），换来更干净的 dev 体验。
+    # 生产若要缓存能扛重启（省冷启动回源），改用 appendonly / save 策略。
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-blog-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 3s
+
 volumes:
   pg-blog-data:
     name: pg-blog-data
+  redis-blog-data:
+    name: redis-blog-data

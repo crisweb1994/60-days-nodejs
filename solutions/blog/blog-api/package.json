@@ -1,7 +1,7 @@
 {
   "name": "blog-api",
   "version": "0.3.0",
-  "description": "Blog API — Day 20 内存版 → Day 27 Prisma → Day 32-34 认证授权 → Day 35 安全防护（Helmet + 限流）",
+  "description": "Blog API — Day 20 内存版 → Day 27 Prisma → Day 32-34 认证授权 → Day 35 安全防护（Helmet + 限流）→ Day 36 Redis 缓存（Cache-Aside）",
   "private": true,
   "scripts": {
     "build": "nest build",
@@ -42,6 +42,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "helmet": "^8.2.0",
+    "ioredis": "^5.11.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "zod": "^3.23.8"

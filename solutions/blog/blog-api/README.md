@@ -92,6 +92,20 @@ Day 20 留了个伏笔——所有 Repository 方法都返回 `Promise`，Servic
 
 详细讲解见 [Day 34 README](../../../days/day-34/)。
 
+## Day 36 更新：Redis 缓存（Cache-Aside）
+
+给读得最猛的接口加一层 Redis 缓存，把数据库挡在后面。**只接 Cache-Aside（旁路缓存）一种策略**——它是「缓存可随时消失」的：Redis 整个宕机，API 照常工作，只是退回直连数据库变慢一点。这条「优雅降级」是整个缓存层的设计主轴：
+
+- 新增 `src/cache/`：`RedisService`（包 `ioredis`，每条命令 `try/catch`，出错当未命中、绝不抛 500；`error` 事件必须接否则进程崩；`maxRetriesPerRequest: 1` + `enableOfflineQueue: false` 快失败）+ 全局 `CacheModule`
+- `PostsService` 的 `findOne` / `findAll` 走 Cache-Aside（查缓存 → miss 查库 → `SET EX` 回填）；`create` / `update` / `remove` 写后失效（单篇 `DEL` + 列表按前缀 `SCAN` 清）；`incrementView` 故意不失效（`viewCount` 容忍 TTL 内陈旧，换 `findOne` 的缓存不被浏览量刷废）
+- **击穿守卫** `coalesce`：同一 key 的并发未命中共享一次 DB 查询（单进程内有效，多实例要换 Redis 分布式锁）
+- **可观测**：`X-Cache: HIT|MISS|BYPASS` + `X-Cache-Key` 响应头。命中状态产生于单例 service、要写到每请求的响应头——用 `AsyncLocalStorage`（CLS）穿透（`src/common/request-context.ts` + 中间件 + `cache-header.interceptor.ts`）
+- **不缓存** `search` / `feed`：高基数 + 强时效，缓存命中率趋近 0
+- 配置加 `REDIS_URL`（默认 localhost，连不上不阻塞启动）+ `POST_CACHE_TTL` / `LIST_CACHE_TTL`；`solutions/blog/blog-db/docker-compose.yml` 加了 `redis` 服务（关持久化）
+- 新增 `test/cache.e2e.test.ts`：命中 / 更新失效 / 删除失效 / 列表失效 / 负结果五组用例（Redis 没起则 skip）
+
+详细讲解见 [Day 36 README](../../../days/day-36/)。
+
 ## 涵盖今日产出
 
 - [x] 目录按 `common / config / feature / health` 重组

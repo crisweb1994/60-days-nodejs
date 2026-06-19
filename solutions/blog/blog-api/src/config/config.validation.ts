@@ -38,6 +38,19 @@ export const envSchema = z.object({
   RATE_LIMIT_TTL: z.coerce.number().int().min(1).default(60),
   RATE_LIMIT_LIMIT: z.coerce.number().int().min(1).default(1000),
 
+  // Day 36：Redis 缓存。注意它是「可选的真相外层」——和数据库的必填哲学相反：
+  // 给了默认值、连不上也不让启动崩溃，最坏情况只是缓存不生效、请求直连数据库。
+  // url 留个本地 docker 默认值；TTL 是「兜底失效」的秒数（哪怕忘了主动失效，到期也自动消失）。
+  REDIS_URL: z
+    .string()
+    .min(1)
+    .refine((v) => v.startsWith('redis://') || v.startsWith('rediss://'), {
+      message: 'REDIS_URL 必须是 redis:// 或 rediss:// 连接串',
+    })
+    .default('redis://localhost:6379'),
+  POST_CACHE_TTL: z.coerce.number().int().min(1).default(300), // 单篇缓存 5 分钟
+  LIST_CACHE_TTL: z.coerce.number().int().min(1).default(60), // 列表缓存 1 分钟（变化更频繁，给短）
+
   // Day 34：GitHub OAuth（可选——没配 client id/secret 就禁用 GitHub 登录，不影响启动）
   GITHUB_CLIENT_ID: z.string().optional(),
   GITHUB_CLIENT_SECRET: z.string().optional(),

@@ -31,6 +31,12 @@ export default function configuration(env: Env) {
       ttlMs: env.RATE_LIMIT_TTL * 1000,
       limit: env.RATE_LIMIT_LIMIT,
     },
+    // Day 36：Redis 缓存。url 直传；两个 TTL 也原样透出，service 读取后作为 SET EX 的过期秒数。
+    redis: {
+      url: env.REDIS_URL,
+      postTtlSec: env.POST_CACHE_TTL,
+      listTtlSec: env.LIST_CACHE_TTL,
+    },
     pagination: {
       defaultLimit: env.PAGE_LIMIT,
       maxLimit: 100,
