@@ -330,6 +330,8 @@ async get(key: string): Promise<string | null> {
 | `.env.example` / `.env` | 补 Redis 连接串 + 两个 TTL |
 | `solutions/blog/blog-db/docker-compose.yml` | 加 `redis` 服务（关持久化） |
 | `test/cache.e2e.test.ts` | **新增**：命中 / 更新失效 / 删除失效 / 列表失效 / 负结果五组用例 |
+| `test/api.e2e.test.ts` | **新增**：端到端「接口联调」，串起认证/CRUD/缓存/搜索/乐观锁/RBAC/Token 轮换/优雅降级（含停 Redis 仍 200 的降级用例） |
+| `test/setup.cjs` | 测试用 access token 给长 TTL（1h），防慢机器上 token 中途过期 |
 
 ### 11. 一份诚实清单：今天做对了什么，还差什么
 

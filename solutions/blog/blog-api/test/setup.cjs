@@ -17,6 +17,9 @@ process.env.PAGE_LIMIT ??= '20';
 process.env.DATABASE_URL ??=
   'postgresql://blog:blog_dev_pwd@localhost:5432/blog?schema=blog_api';
 process.env.JWT_ACCESS_SECRET ??= 'test-access-secret-at-least-32-chars-long';
+// 测试用 access token 给个长 TTL（1 小时）：跑得慢的机器 / CI 上，默认 15 分钟可能不够，
+// 导致一条用例开头签发的 token 到后面断言时已过期 → 莫名其妙的 401。测试从不验证「自然过期」。
+process.env.JWT_ACCESS_TTL ??= '3600';
 // OAuth 测试需要「已配置」状态，而 .env.example 里这两个故意留空——这里补测试占位值。
 process.env.GITHUB_CLIENT_ID ??= 'test-client-id';
 process.env.GITHUB_CLIENT_SECRET ??= 'test-client-secret';

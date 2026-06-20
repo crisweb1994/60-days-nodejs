@@ -103,6 +103,7 @@ Day 20 留了个伏笔——所有 Repository 方法都返回 `Promise`，Servic
 - **不缓存** `search` / `feed`：高基数 + 强时效，缓存命中率趋近 0
 - 配置加 `REDIS_URL`（默认 localhost，连不上不阻塞启动）+ `POST_CACHE_TTL` / `LIST_CACHE_TTL`；`solutions/blog/blog-db/docker-compose.yml` 加了 `redis` 服务（关持久化）
 - 新增 `test/cache.e2e.test.ts`：命中 / 更新失效 / 删除失效 / 列表失效 / 负结果五组用例（Redis 没起则 skip）
+- 新增 `test/api.e2e.test.ts`：端到端「接口联调」，把认证 / CRUD / 缓存 / 分页搜索 / 乐观锁 / RBAC / Token 轮换 / 优雅降级串成一条用户旅程逐段断言（含「停 Redis 仍 200 + X-Cache=BYPASS」的降级用例，无 docker 时自动 skip）
 
 详细讲解见 [Day 36 README](../../../days/day-36/)。
 
