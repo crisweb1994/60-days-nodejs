@@ -389,6 +389,19 @@ export class PrismaPostsRepository implements PostsRepository {
     }
   }
 
+  // Day 37 —— 排行榜的 DB 兜底。view_count 上没有索引时是全表排序，只在 ZSET 不可用时才走。
+  async findTopByViewCount(limit: number): Promise<Post[]> {
+    const rows = await this.prisma.post.findMany({
+      where: { status: 'published' },
+      orderBy: [
+        { viewCount: 'desc' },
+        { id: 'asc' }, // 浏览数打平时，次级键兜底，保证顺序稳定
+      ],
+      take: limit,
+    });
+    return rows.map((r) => this.toDomain(r));
+  }
+
   async listRevisions(postId: string): Promise<PostRevision[]> {
     const rows = await this.prisma.postRevision.findMany({
       where: { postId },

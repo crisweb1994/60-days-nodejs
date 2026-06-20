@@ -1,7 +1,7 @@
 {
   "name": "blog-api",
   "version": "0.3.0",
-  "description": "Blog API — Day 20 内存版 → Day 27 Prisma → Day 32-34 认证授权 → Day 35 安全防护（Helmet + 限流）→ Day 36 Redis 缓存（Cache-Aside）",
+  "description": "Blog API — Day 20 内存版 → Day 27 Prisma → Day 32-34 认证授权 → Day 35 安全防护 → Day 36 Redis 缓存 → Day 37 Redis 进阶（排行榜 + 分布式锁）",
   "private": true,
   "scripts": {
     "build": "nest build",

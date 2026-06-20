@@ -107,6 +107,18 @@ Day 20 留了个伏笔——所有 Repository 方法都返回 `Promise`，Servic
 
 详细讲解见 [Day 36 README](../../../days/day-36/)。
 
+## Day 37 更新：Redis 进阶（排行榜 + 分布式锁 + 缓存三坑）
+
+在 Day 36 的缓存基础上，把「留到以后」的几件事兑现，并加两个 Redis 招牌用法：
+
+- 新增 `src/cache/redis-lock.service.ts`：分布式锁（`SET NX EX` 抢锁 + Lua 脚本安全释放 + `withLock` 包装）。`RedisService` 补 `setNx` / `eval` / ZSET 命令（`zincrby`、`zrem`、`zrevrangeWithScores`）
+- 新增 `src/posts/trending.service.ts`：Sorted Set 排行榜。浏览时 `ZINCRBY` 加分、删除时 `ZREM` 摘榜；新增 `GET /posts/trending`（ZSET 取 Top N，不可用时回退 DB `ORDER BY view_count`）；仓储加 `findTopByViewCount` 兜底
+- 缓存三坑对策落到 `PostsService.findOne`：**击穿** = 进程内 `coalesce` + 跨进程分布式锁（带双重检查）；**穿透** = 负缓存（404 写短 TTL 哨兵）；**雪崩** = TTL 随机抖动（`jitteredTtl`）
+- config 加 `CACHE_TTL_JITTER` / `NEGATIVE_CACHE_TTL` / `LOCK_TTL`
+- 新增 `test/redis-advanced.e2e.test.ts`：排行榜排序 / DB 兜底 / 锁互斥+安全释放 / 负缓存
+
+详细讲解见 [Day 37 README](../../../days/day-37/)。
+
 ## 涵盖今日产出
 
 - [x] 目录按 `common / config / feature / health` 重组

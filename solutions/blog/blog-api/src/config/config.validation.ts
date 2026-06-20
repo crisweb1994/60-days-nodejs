@@ -50,6 +50,10 @@ export const envSchema = z.object({
     .default('redis://localhost:6379'),
   POST_CACHE_TTL: z.coerce.number().int().min(1).default(300), // 单篇缓存 5 分钟
   LIST_CACHE_TTL: z.coerce.number().int().min(1).default(60), // 列表缓存 1 分钟（变化更频繁，给短）
+  // Day 37：缓存进阶三参数——雪崩抖动、穿透负缓存、击穿分布式锁。都有默认值，可不动。
+  CACHE_TTL_JITTER: z.coerce.number().int().min(0).default(60), // 雪崩：TTL 随机抖动上限（秒）
+  NEGATIVE_CACHE_TTL: z.coerce.number().int().min(1).default(30), // 穿透：负缓存（不存在）存活秒数
+  LOCK_TTL: z.coerce.number().int().min(1).default(3), // 击穿：分布式锁存活秒数（≥ 最慢一次重建）
 
   // Day 34：GitHub OAuth（可选——没配 client id/secret 就禁用 GitHub 登录，不影响启动）
   GITHUB_CLIENT_ID: z.string().optional(),

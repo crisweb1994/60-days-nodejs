@@ -99,6 +99,79 @@ export class RedisService implements OnModuleDestroy {
     }
   }
 
+  // ── Day 37：分布式锁要的 SET NX EX ──────────────────────────────────
+  /**
+   * 「只在键不存在时写入，并设过期」——SET key value NX EX。
+   * 返回 true = 抢到了（键原先不存在、刚被你设上）；false = 键已存在（别人占着）。
+   * 这是分布式锁的原子基石：NX（不存在才写）+ EX（必带过期，防持锁者崩了锁永不释放）二合一，一条命令原子完成。
+   */
+  async setNx(key: string, value: string, ttlSeconds: number): Promise<boolean> {
+    try {
+      const res = await this.client.set(key, value, 'EX', ttlSeconds, 'NX');
+      return res === 'OK';
+    } catch (e) {
+      this.debugMiss(key, e);
+      return false; // 出错当没抢到——调用方降级，不阻塞业务
+    }
+  }
+
+  /**
+   * 执行 Lua 脚本。Redis 保证单条 Lua 脚本「原子执行」（脚本跑的时候，别的命令都得排队）。
+   * 用来做分布式锁的「安全释放」：先比对 token 再删，这两步必须原子，否则有竞态（见 RedisLockService）。
+   */
+  async eval(script: string, keys: string[], args: (string | number)[]): Promise<unknown> {
+    try {
+      return await this.client.eval(script, keys.length, ...keys, ...args);
+    } catch (e) {
+      this.debugMiss(keys.join(','), e);
+      return null;
+    }
+  }
+
+  // ── Day 37：排行榜要的 Sorted Set（ZSET）命令 ──────────────────────
+  // ZSET = member（成员）→ score（分数）的有序去重集合，Redis 自动按 score 排序。排行榜的本命结构。
+
+  /** 给某成员加分（原子）。`ZINCRBY key incr member`——不存在则按 0 起算。 */
+  async zincrby(key: string, incr: number, member: string): Promise<void> {
+    try {
+      await this.client.zincrby(key, incr, member);
+    } catch (e) {
+      this.debugMiss(key, e);
+    }
+  }
+
+  /** 删掉某成员。`ZREM key member`。 */
+  async zrem(key: string, member: string): Promise<void> {
+    try {
+      await this.client.zrem(key, member);
+    } catch (e) {
+      this.debugMiss(key, e);
+    }
+  }
+
+  /**
+   * 按 score 从高到低取一段成员 + 分数：`ZREVRANGE key start stop WITHSCORES`。
+   * 返回 [{ member, score }]。排行榜「取 Top N」就靠它——一条命令拿到前 N 名，O(log N + N)。
+   */
+  async zrevrangeWithScores(
+    key: string,
+    start: number,
+    stop: number,
+  ): Promise<Array<{ member: string; score: number }>> {
+    try {
+      // ioredis 返回 [member, score, member, score, ...] 的扁平数组
+      const flat = (await this.client.zrevrange(key, start, stop, 'WITHSCORES')) as string[];
+      const out: Array<{ member: string; score: number }> = [];
+      for (let i = 0; i < flat.length; i += 2) {
+        out.push({ member: flat[i], score: Number(flat[i + 1]) });
+      }
+      return out;
+    } catch (e) {
+      this.debugMiss(key, e);
+      return [];
+    }
+  }
+
   /**
    * 按前缀批量删除——列表缓存失效时用（一篇文章变了，所有页/排序/过滤的列表都可能受影响）。
    *

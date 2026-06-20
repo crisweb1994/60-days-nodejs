@@ -210,6 +210,14 @@ export class InMemoryPostsRepository implements PostsRepository {
     return next;
   }
 
+  // Day 37 —— 排行榜的 DB 兜底：按浏览数降序取 Top N（published）。
+  async findTopByViewCount(limit: number): Promise<Post[]> {
+    return Array.from(this.store.values())
+      .filter((p) => p.status === 'published')
+      .sort((a, b) => b.viewCount - a.viewCount || (a.id < b.id ? -1 : 1))
+      .slice(0, limit);
+  }
+
   async listRevisions(postId: string): Promise<PostRevision[]> {
     const list = this.revisions.get(postId) ?? [];
     return [...list].sort((a, b) => b.version - a.version); // 新 → 旧

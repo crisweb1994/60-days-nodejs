@@ -207,13 +207,16 @@ test('缓存：单篇与列表 MISS→HIT，带 X-Cache-Key', async (t) => {
   assert.equal(one2.headers.get('x-cache'), 'HIT');
 });
 
-test('缓存：负结果不缓存（404），非法 UUID 400', async (t) => {
+test('缓存穿透：不存在的 id 被负缓存（404 写哨兵），第二次不查库；非法 UUID 400', async (t) => {
   needRedis(t);
   const ghost = '00000000-0000-4000-a000-000000000000';
   const a = await req('GET', `/posts/${ghost}`);
   assert.equal(a.status, 404);
   assert.equal(a.data.code, 'POST_NOT_FOUND');
-  assert.equal((await req('GET', `/posts/${ghost}`)).status, 404, '第二次依旧真查库 404');
+  // Day 37 穿透对策：404 后「不存在」被短缓存成哨兵，下次同一假 id 不再穿透到 DB
+  const sentinel = await redis.get(`post:${ghost}`);
+  assert.ok((sentinel ?? '').includes('NOT_FOUND'), `应缓存负结果哨兵，实际：${sentinel}`);
+  assert.equal((await req('GET', `/posts/${ghost}`)).status, 404, '第二次命中负缓存仍 404');
   assert.equal((await req('GET', '/posts/not-a-uuid')).status, 400);
 });
 
@@ -238,6 +241,29 @@ test('分页 / 信息流 / 搜索（含 SQL 注入免疫）', async () => {
   const inj = await req('GET', '/posts/search?q=' + encodeURIComponent("' OR '1'='1"));
   assert.equal(inj.status, 200);
   assert.equal(inj.data.data.items.length, 0);
+});
+
+// ─── 排行榜（Day 37：Sorted Set）──────────────────────────────────────
+
+test('排行榜 GET /posts/trending：按浏览数从高到低', async (t) => {
+  needRedis(t);
+  await redis.del('hot:posts'); // 清掉历史榜单，确保本用例从空榜开始
+  const tok = await register('user');
+  const a = (await createPost(tok, { slug: 'a' })).id;
+  const b = (await createPost(tok, { slug: 'b' })).id;
+  const c = (await createPost(tok, { slug: 'c' })).id;
+  // 浏览 A×3 / B×2 / C×1：POST /:id/view 既 +1 view_count 也给 ZSET +1 分
+  for (let i = 0; i < 3; i++) await req('POST', `/posts/${a}/view`);
+  for (let i = 0; i < 2; i++) await req('POST', `/posts/${b}/view`);
+  await req('POST', `/posts/${c}/view`);
+
+  const r = await req('GET', '/posts/trending?limit=3');
+  assert.equal(r.status, 200);
+  assert.deepEqual(
+    (r.data?.data?.items ?? []).map((p: any) => p.id),
+    [a, b, c],
+    '应按浏览数从高到低：A(3) > B(2) > C(1)',
+  );
 });
 
 // ─── 浏览计数 & 修订 ───────────────────────────────────────────────────
