@@ -11,6 +11,7 @@ import { validateEnv } from './config/config.validation';
 import type { AppConfig } from './config/configuration';
 import { HealthModule } from './health/health.module';
 import { PostsModule } from './posts/posts.module';
+import { QueueModule } from './queue/queue.module';
 
 @Module({
   imports: [
@@ -38,6 +39,8 @@ import { PostsModule } from './posts/posts.module';
     CommonModule, // 全局 Filter / Interceptor / Pipe + Middleware 都在这里
     // Day 36：Redis 缓存。@Global 模块，任何模块都能直接注入 RedisService。
     CacheModule,
+    // Day 38：消息队列（BullMQ）。@Global 模块，任何模块都能注入 MailQueueService 入队异步任务。
+    QueueModule,
     HealthModule,
     AuthModule, // Day 32：注册 / 登录 / JWT
     PostsModule,

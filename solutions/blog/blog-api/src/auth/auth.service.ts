@@ -1,10 +1,11 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, Optional } from '@nestjs/common';
 import { Prisma, type User } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
 import { ErrorCodes } from '../common/constants/error-codes';
 import { BusinessException } from '../common/exceptions/business.exception';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailQueueService } from '../queue/mail-queue.service';
 import { LoginDto } from './dto/login.dto';
 import type { GithubUser } from './oauth/github-oauth.provider';
 import { RegisterDto } from './dto/register.dto';
@@ -22,6 +23,10 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tokens: TokensService,
+    // Day 38：注册成功后异步入队一封欢迎邮件。@Optional：单元测试不传也能 new AuthService。
+    // ★ 注意我们【await 的是入队】，不是【发信】——入队只是往 Redis 塞一条任务（毫秒级），
+    //   真正发信由后台 worker 慢慢做。用户只等这「入队」一下，不等 SMTP 的秒级往返。
+    @Optional() private readonly mail?: MailQueueService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -58,6 +63,19 @@ export class AuthService {
       }
       throw e;
     }
+
+    // Day 38：异步解耦——注册成功后，把「发欢迎邮件」甩进队列，不阻塞响应、也不因邮件故障连累注册。
+    // enqueue 永不抛错（内部已降级），所以就算 Redis 挂了，注册依旧正常返回 token。
+    // 幂等键 `welcome_<userId>` 同时作为 BullMQ 的 jobId（入队侧去重）+ Redis 幂等标记后缀。
+    // ★ 用下划线不用冒号：BullMQ 禁止队列名和 jobId 含 `:`（会拼进 Redis key `bull:mail:<jobId>` 撞命名空间）。
+    await this.mail?.enqueue({
+      kind: 'welcome',
+      to: dto.email,
+      subject: `欢迎加入，${dto.username}！`,
+      body: `你好 ${dto.username}，感谢注册。这是一封由消息队列异步发送的欢迎邮件。`,
+      idempotencyKey: `welcome_${user.id}`,
+    });
+
     return this.authResponse(user, await this.tokens.issue(user));
   }
 

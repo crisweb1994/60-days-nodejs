@@ -1,7 +1,7 @@
 {
   "name": "blog-api",
   "version": "0.3.0",
-  "description": "Blog API — Day 20 内存版 → Day 27 Prisma → Day 32-34 认证授权 → Day 35 安全防护 → Day 36 Redis 缓存 → Day 37 Redis 进阶（排行榜 + 分布式锁）",
+  "description": "Blog API — Day 20 内存版 → Day 27 Prisma → Day 32-34 认证授权 → Day 35 安全防护 → Day 36 Redis 缓存 → Day 37 Redis 进阶（排行榜 + 分布式锁）→ Day 38 消息队列（BullMQ：异步邮件 / 重试 / 死信）",
   "private": true,
   "scripts": {
     "build": "nest build",
@@ -39,6 +39,7 @@
     "@nestjs/throttler": "^6.5.0",
     "@prisma/client": "^5.22.0",
     "bcryptjs": "^3.0.3",
+    "bullmq": "^5.79.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "helmet": "^8.2.0",

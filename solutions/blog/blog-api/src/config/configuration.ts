@@ -41,6 +41,14 @@ export default function configuration(env: Env) {
       negativeTtlSec: env.NEGATIVE_CACHE_TTL,
       lockTtlSec: env.LOCK_TTL,
     },
+    // Day 38：消息队列（BullMQ，基于上面的同一个 Redis）。复用 redis.url，不再单独配连接串。
+    // 队列同样是「可选的异步基础设施」——连不上只影响「邮件异步发送」，不影响主流程，故都有默认值。
+    queue: {
+      attempts: env.MAIL_ATTEMPTS, // 单个任务最多尝试次数（含首次）
+      backoffMs: env.MAIL_BACKOFF_MS, // 指数退避的基准间隔（毫秒）
+      concurrency: env.MAIL_CONCURRENCY, // 单 worker 进程并发处理数
+      sentTtlSec: env.MAIL_SENT_TTL, // 幂等标记「这封已发过」的存活秒数
+    },
     pagination: {
       defaultLimit: env.PAGE_LIMIT,
       maxLimit: 100,
