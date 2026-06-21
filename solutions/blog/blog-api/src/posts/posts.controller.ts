@@ -10,11 +10,15 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseFilters,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiExcludeEndpoint,
   ApiOperation,
   ApiParam,
@@ -27,6 +31,7 @@ import {
   ApiErrorEnvelope,
 } from '../common/decorators/api-envelope.decorator';
 import { BusinessExceptionFilter } from '../common/filters/business-exception.filter';
+import { CoverUploadInterceptor } from '../storage/cover-upload.interceptor';
 import { CreatePostDto } from './dto/create-post.dto';
 import {
   DeletedResponseDto,
@@ -130,6 +135,38 @@ export class PostsController {
   @ApiErrorEnvelope(404, '文章不存在', 'POST_NOT_FOUND')
   incrementView(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.posts.incrementView(id);
+  }
+
+  // Day 39：上传封面图。multipart/form-data，字段名 file；multer 在 CoverUploadInterceptor 里解析。
+  // @UseInterceptors 的拦截器经 DI 实例化——它注入 ConfigService 拿到配置驱动的 limits / fileFilter。
+  // ★ @HttpCode(200)：这是【更新】已有文章的封面，不是创建资源，所以不该用 @Post 默认的 201。
+  @Post(':id/cover')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(CoverUploadInterceptor)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '上传封面图（需登录 + 作者本人或 admin）' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @idParam
+  @ApiEnvelope(PostResponseDto)
+  @ApiErrorEnvelope(400, '未上传文件 / 非图片', 'INVALID_FILE')
+  @ApiErrorEnvelope(401, '未认证', 'UNAUTHORIZED')
+  @ApiErrorEnvelope(403, '不是作者也不是 admin', 'FORBIDDEN')
+  @ApiErrorEnvelope(404, '文章不存在', 'POST_NOT_FOUND')
+  @ApiErrorEnvelope(413, '文件过大', 'UPLOAD_TOO_LARGE')
+  @ApiErrorEnvelope(415, '仅支持图片', 'UNSUPPORTED_MEDIA_TYPE')
+  uploadCover(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.posts.uploadCover(id, file, user);
   }
 
   // ── 写接口：Day 33 起需要登录；改 / 删还要是作者本人或 admin ──────────

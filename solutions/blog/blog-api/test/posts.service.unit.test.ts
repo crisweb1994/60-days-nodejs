@@ -45,6 +45,7 @@ function mockRepo(over: Partial<PostsRepository> = {}): PostsRepository {
     update: async (_id, patch) => fakePost(patch as Partial<Post>),
     incrementViewCount: async () => null,
     findTopByViewCount: async () => [],
+    setCoverImage: async () => null,
     listRevisions: async () => [],
     remove: async () => true,
     ...over,

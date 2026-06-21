@@ -24,3 +24,8 @@ process.env.JWT_ACCESS_TTL ??= '3600';
 process.env.GITHUB_CLIENT_ID ??= 'test-client-id';
 process.env.GITHUB_CLIENT_SECRET ??= 'test-client-secret';
 process.env.GITHUB_CALLBACK_URL ??= 'http://localhost:3000/auth/github/callback';
+// Day 39：上传大小上限调到 1 KiB。让 upload.e2e.test.ts 的「超限」用例不必分配几 MB 内存、跑得飞快。
+// ★ 必须在这里（预加载）设，不能放进某个测试的 before()：@nestjs/config 在【import 阶段】就
+//   把 env 烘焙成配置对象，before() 是测试文件 import【之后】才跑的——那时配置早已定型。
+//   这正是本文件存在的核心理由（见顶部注释）。只影响上传接口，其它测试不碰它。
+process.env.UPLOAD_MAX_BYTES ??= '1024';

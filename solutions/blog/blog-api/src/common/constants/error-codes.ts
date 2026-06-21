@@ -27,6 +27,12 @@ export const ErrorCodes = {
   OAUTH_NOT_CONFIGURED: 'OAUTH_NOT_CONFIGURED',
   OAUTH_STATE_INVALID: 'OAUTH_STATE_INVALID',
   OAUTH_FAILED: 'OAUTH_FAILED',
+
+  // Day 39：文件上传与存储
+  UPLOAD_TOO_LARGE: 'UPLOAD_TOO_LARGE', // 文件超过大小上限（multer limits.fileSize）
+  UNSUPPORTED_MEDIA_TYPE: 'UNSUPPORTED_MEDIA_TYPE', // Content-Type 不在图片白名单
+  INVALID_FILE: 'INVALID_FILE', // 不是合法图片（sharp 解析不出像素）/ 未上传文件
+  STORAGE_FAILED: 'STORAGE_FAILED', // 对象存储读写失败（网络 / 权限 / 配置）
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

@@ -2,14 +2,17 @@ import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { mkdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { AppModule } from './app.module';
 import type { AppConfig } from './config/configuration';
 
 // main.ts 只做装配：bootstrap、CORS、shutdown hooks、Swagger、listen
 // 任何业务代码出现在这里都是异味
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const config = app.get(ConfigService<AppConfig, true>);
 
   app.enableCors({
@@ -20,6 +23,20 @@ async function bootstrap() {
   // 没开这个，容器 SIGTERM 时正在处理的请求会被一刀切断
   // OnApplicationShutdown 钩子也不会触发，连接池泄漏的经典源头
   app.enableShutdownHooks();
+
+  // Day 39：本地存储后端时，把上传目录挂成静态资源——封面图对外就能用 /uploads/... 直接访问。
+  // S3 后端不需要这步（文件在外部对象存储）。这里只在 backend=local 时挂，避免挂一个用不到的目录。
+  if (config.get('storage.backend', { infer: true }) === 'local') {
+    const dir = resolve(
+      process.cwd(),
+      config.get('storage.localDir', { infer: true }),
+    );
+    mkdirSync(dir, { recursive: true });
+    app.useStaticAssets(dir, {
+      // prefix 要和 configuration 里 storage.localPublicPrefix 对齐，URL 才拼得上。
+      prefix: config.get('storage.localPublicPrefix', { infer: true }),
+    });
+  }
 
   // Day 30：Swagger / OpenAPI 文档。UI 在 /docs，机器可读 JSON 在 /docs-json。
   // 文档里说明统一响应外壳——因为 TransformInterceptor 给每个响应包了一层，

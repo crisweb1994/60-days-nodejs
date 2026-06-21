@@ -5,6 +5,8 @@ export const POST_STATUSES: PostStatus[] = ['draft', 'published', 'archived'];
 export interface PostMeta {
   seoTitle: string;
   seoDescription: string;
+  // Day 39：封面图对外 URL（由 POST /posts/:id/cover 落地，不参与 SEO meta 的 DTO 必填校验）。
+  coverImage?: string;
 }
 
 export interface Post {

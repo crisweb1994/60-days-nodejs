@@ -5,6 +5,7 @@ import { BusinessException } from '../../common/exceptions/business.exception';
 import { encodeCursor, type CursorPayload } from '../cursor';
 import type {
   Post,
+  PostMeta,
   PostRevision,
   PostStatus,
   PostWriteData,
@@ -216,6 +217,18 @@ export class InMemoryPostsRepository implements PostsRepository {
       .filter((p) => p.status === 'published')
       .sort((a, b) => b.viewCount - a.viewCount || (a.id < b.id ? -1 : 1))
       .slice(0, limit);
+  }
+
+  // Day 39 —— 封面图：合并进 meta.coverImage，不 bump version、不记修订（和 Prisma 版同语义）。
+  async setCoverImage(postId: string, coverUrl: string | null): Promise<Post | null> {
+    const post = this.store.get(postId);
+    if (!post) return null;
+    const meta = { ...(post.meta ?? ({} as PostMeta)) };
+    if (coverUrl === null) delete meta.coverImage;
+    else meta.coverImage = coverUrl;
+    const next: Post = { ...post, meta };
+    this.store.set(postId, next);
+    return next;
   }
 
   async listRevisions(postId: string): Promise<PostRevision[]> {

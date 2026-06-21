@@ -49,6 +49,31 @@ export default function configuration(env: Env) {
       concurrency: env.MAIL_CONCURRENCY, // 单 worker 进程并发处理数
       sentTtlSec: env.MAIL_SENT_TTL, // 幂等标记「这封已发过」的存活秒数
     },
+    // Day 39：文件上传与存储。默认本地磁盘（零配置可用）；改 backend=s3 走 S3 兼容对象存储。
+    // 存储同样是「可选真相外层」——但它和 Redis 的降级哲学相反：
+    //   默认 local 永远可用；一旦显式选 s3，配错（缺 bucket）应启动即崩（fail-fast），
+    //   而不是悄悄降级——因为「选对象存储」是运营决定，配错就该立刻炸出来。
+    storage: {
+      backend: env.STORAGE_BACKEND, // 'local' | 's3'
+      localDir: env.STORAGE_LOCAL_DIR, // local：写入根目录（相对 cwd）
+      localPublicPrefix: env.STORAGE_PUBLIC_PREFIX, // local：对外 URL 前缀（express static 的 prefix）
+      upload: {
+        maxBytes: env.UPLOAD_MAX_BYTES, // multer 硬上限：超了在缓冲阶段就中断
+      },
+      cover: {
+        maxWidth: env.COVER_MAX_WIDTH, // 缩放到最大宽度（不放大）
+        format: env.COVER_FORMAT, // 归一化目标格式：webp（默认）/ jpeg / png
+      },
+      s3: {
+        endpoint: env.S3_ENDPOINT, // R2: https://<account>.r2.cloudflarestorage.com；MinIO: http://localhost:9000；AWS 留空
+        region: env.S3_REGION, // R2 用 auto；AWS 用 region；MinIO 任意
+        bucket: env.S3_BUCKET, // 桶名（backend=s3 时必填，缺则启动崩）
+        accessKeyId: env.S3_ACCESS_KEY_ID,
+        secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+        forcePathStyle: env.S3_FORCE_PATH_STYLE, // MinIO / 自建 true；R2 / AWS false
+        publicBaseUrl: env.S3_PUBLIC_BASE_URL, // CDN / R2 公开域名；不填则按 endpoint+bucket 拼路径风格 URL
+      },
+    },
     pagination: {
       defaultLimit: env.PAGE_LIMIT,
       maxLimit: 100,

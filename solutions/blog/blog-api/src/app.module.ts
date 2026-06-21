@@ -12,6 +12,7 @@ import type { AppConfig } from './config/configuration';
 import { HealthModule } from './health/health.module';
 import { PostsModule } from './posts/posts.module';
 import { QueueModule } from './queue/queue.module';
+import { StorageModule } from './storage/storage.module';
 
 @Module({
   imports: [
@@ -41,6 +42,8 @@ import { QueueModule } from './queue/queue.module';
     CacheModule,
     // Day 38：消息队列（BullMQ）。@Global 模块，任何模块都能注入 MailQueueService 入队异步任务。
     QueueModule,
+    // Day 39：文件上传与存储。@Global 模块，任何模块都能注入 STORAGE_SERVICE / ImageProcessorService。
+    StorageModule,
     HealthModule,
     AuthModule, // Day 32：注册 / 登录 / JWT
     PostsModule,

@@ -402,6 +402,38 @@ export class PrismaPostsRepository implements PostsRepository {
     return rows.map((r) => this.toDomain(r));
   }
 
+  // Day 39 —— 封面图：读当前 meta → 合并 coverImage → 只回写 meta 这一列。
+  // 用专门的 update（而非 update() 接口的乐观锁路径），避免 bump version、避免写一条「内容没变」的修订。
+  async setCoverImage(postId: string, coverUrl: string | null): Promise<Post | null> {
+    try {
+      const current = await this.prisma.post.findUnique({
+        where: { id: postId },
+        select: { meta: true },
+      });
+      if (!current) return null;
+
+      // 合并：以现有 meta 为底，覆盖/删除 coverImage。
+      const base = (current.meta ?? {}) as Record<string, unknown>;
+      if (coverUrl === null) delete base.coverImage;
+      else base.coverImage = coverUrl;
+
+      const row = await this.prisma.post.update({
+        where: { id: postId },
+        data: { meta: base as unknown as Prisma.InputJsonValue },
+      });
+      return this.toDomain(row);
+    } catch (e) {
+      // update 不存在的 id → P2025 → 返回 null（交给 Service 当 NOT_FOUND）
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2025'
+      ) {
+        return null;
+      }
+      throw e;
+    }
+  }
+
   async listRevisions(postId: string): Promise<PostRevision[]> {
     const rows = await this.prisma.postRevision.findMany({
       where: { postId },

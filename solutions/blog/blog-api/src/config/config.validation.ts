@@ -63,6 +63,23 @@ export const envSchema = z.object({
   MAIL_CONCURRENCY: z.coerce.number().int().min(1).default(4), // 单 worker 并发数
   MAIL_SENT_TTL: z.coerce.number().int().min(1).default(86_400), // 幂等标记存活秒数（默认 1 天）
 
+  // Day 39：文件上传与存储。默认本地磁盘——零配置可用；改 STORAGE_BACKEND=s3 才需要补 S3_*。
+  // 大小/尺寸都给保守默认：5 MiB 够封面图，1600px 宽够清晰又省带宽，webp 是体积/质量最优解。
+  STORAGE_BACKEND: z.enum(['local', 's3']).default('local'),
+  STORAGE_LOCAL_DIR: z.string().min(1).default('uploads'), // local：写入根目录
+  STORAGE_PUBLIC_PREFIX: z.string().default('/uploads'), // local：对外 URL 前缀
+  UPLOAD_MAX_BYTES: z.coerce.number().int().min(1).default(5 * 1024 * 1024), // 单文件硬上限（5 MiB）
+  COVER_MAX_WIDTH: z.coerce.number().int().min(1).default(1600), // 封面归一化最大宽度
+  COVER_FORMAT: z.enum(['webp', 'jpeg', 'png']).default('webp'),
+  // S3 兼容（R2 / MinIO / AWS）——默认全空，只在 backend=s3 时才校验必填（见 StorageModule）。
+  S3_ENDPOINT: z.string().optional(),
+  S3_REGION: z.string().default('auto'),
+  S3_BUCKET: z.string().optional(),
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+  S3_FORCE_PATH_STYLE: z.coerce.boolean().default(false),
+  S3_PUBLIC_BASE_URL: z.string().optional(),
+
   // Day 34：GitHub OAuth（可选——没配 client id/secret 就禁用 GitHub 登录，不影响启动）
   GITHUB_CLIENT_ID: z.string().optional(),
   GITHUB_CLIENT_SECRET: z.string().optional(),
