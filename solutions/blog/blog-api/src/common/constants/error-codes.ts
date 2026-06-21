@@ -33,6 +33,10 @@ export const ErrorCodes = {
   UNSUPPORTED_MEDIA_TYPE: 'UNSUPPORTED_MEDIA_TYPE', // Content-Type 不在图片白名单
   INVALID_FILE: 'INVALID_FILE', // 不是合法图片（sharp 解析不出像素）/ 未上传文件
   STORAGE_FAILED: 'STORAGE_FAILED', // 对象存储读写失败（网络 / 权限 / 配置）
+
+  // Day 40：安全加固版
+  ACCOUNT_LOCKED: 'ACCOUNT_LOCKED', // 账号因连续登录失败被临时锁定（423 Locked）
+  BODY_TOO_LARGE: 'BODY_TOO_LARGE', // 请求体超过体积上限（413 Payload Too Large）
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

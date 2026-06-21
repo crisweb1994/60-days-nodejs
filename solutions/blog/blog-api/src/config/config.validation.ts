@@ -86,6 +86,12 @@ export const envSchema = z.object({
   GITHUB_CALLBACK_URL: z
     .string()
     .default('http://localhost:3000/auth/github/callback'),
+
+  // Day 40：安全加固。两个方向——账号锁定（暴力破解对策）+ 请求体上限（大 payload DoS 对策）。
+  // 锁定阈值/时长给保守默认（5 次失败锁 15 分钟，到点自动解锁）。测试里把阈值调小以快速触发。
+  LOGIN_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(5), // 连续失败几次后锁定该账号
+  LOGIN_LOCK_MINUTES: z.coerce.number().int().min(1).default(15), // 锁定持续分钟数（到点自动解锁）
+  HTTP_BODY_LIMIT_KB: z.coerce.number().int().min(1).default(100), // JSON 请求体硬上限（KB）——挡大 payload DoS
 }).superRefine((env, ctx) => {
   // 生产环境拒绝使用 .env.example 的示例 secret——占位值上线 = 谁都能伪造 token
   if (env.NODE_ENV === 'production' && env.JWT_ACCESS_SECRET === EXAMPLE_JWT_SECRET) {

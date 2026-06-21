@@ -20,6 +20,13 @@ async function bootstrap() {
     credentials: true,
   });
 
+  // Day 40：JSON 请求体硬上限。别依赖 Express 的隐式默认（100kb，版本间会变）——显式交给
+  // body-parser：超大 payload 在解析阶段就被拒成 413，而不是把几 MB 的 JSON 整坨灌进内存。
+  // 文件上传走 multipart，由 multer 的 fileSize 闸管（Day 39），不经这条 json 解析。
+  app.useBodyParser('json', {
+    limit: `${config.get('http.bodyLimitKb', { infer: true })}kb`,
+  });
+
   // 没开这个，容器 SIGTERM 时正在处理的请求会被一刀切断
   // OnApplicationShutdown 钩子也不会触发，连接池泄漏的经典源头
   app.enableShutdownHooks();

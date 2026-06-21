@@ -99,6 +99,33 @@ export class RedisService implements OnModuleDestroy {
     }
   }
 
+  // ── Day 40：账号锁定要的「带 TTL 的原子计数器」────────────────────
+  /**
+   * 自增 key 并在它【第一次被创建时】设过期：`INCR` + 首次 `EXPIRE`，两步用一条 Lua 原子完成。
+   *
+   * 为什么不写 `INCR` 再 `EXPIRE` 两条普通命令：进程在两者之间崩了，计数器就**永不过期**——
+   * 某个邮箱的一次失败永远占着内存、且账号会被永久误锁。和分布式锁里 `SETNX`+`EXPIRE` 的老坑
+   * 同构（见 Day 37 §3）。Lua 脚本在 Redis 里原子执行，从根上堵掉这个窗口。
+   *
+   * 用途：登录失败计数（Day 40 账号锁定）。第一次失败创建计数器并起算窗口（windowSec），
+   * 后续失败只 INCR、不续期——窗口固定从首次失败起算，到期自动归零、账号自动解锁。
+   * 返回当前累计次数；Redis 出错则返回 0（调用方据此降级成「不做锁定」）。
+   */
+  async incrWithTtl(key: string, ttlSeconds: number): Promise<number> {
+    const script = `
+      local n = redis.call('INCR', KEYS[1])
+      if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+      return n
+    `;
+    try {
+      const n = await this.client.eval(script, 1, key, ttlSeconds);
+      return typeof n === 'number' ? n : 0;
+    } catch (e) {
+      this.debugMiss(key, e);
+      return 0;
+    }
+  }
+
   // ── Day 37：分布式锁要的 SET NX EX ──────────────────────────────────
   /**
    * 「只在键不存在时写入，并设过期」——SET key value NX EX。

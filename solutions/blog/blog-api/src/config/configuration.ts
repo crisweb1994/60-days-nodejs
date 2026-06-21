@@ -13,6 +13,12 @@ export default function configuration(env: Env) {
       accessSecret: env.JWT_ACCESS_SECRET,
       accessTtl: env.JWT_ACCESS_TTL, // 秒
       refreshTtlDays: env.REFRESH_TTL_DAYS,
+      // Day 40：账号锁定（暴力破解对策）。阈值 + 锁定窗口（秒）。锁定状态落在 Redis，
+      // 连不上就静默关闭——和缓存「可选层」哲学一致，绝不因它连累登录主流程。
+      lockout: {
+        maxAttempts: env.LOGIN_MAX_ATTEMPTS,
+        windowSec: env.LOGIN_LOCK_MINUTES * 60,
+      },
     },
     oauth: {
       github: {
@@ -25,6 +31,11 @@ export default function configuration(env: Env) {
       origin: env.CORS_ORIGIN.split(',')
         .map((s) => s.trim())
         .filter(Boolean),
+    },
+    // Day 40：HTTP 层硬上限。别依赖 Express 的隐式默认（不同版本会变）——把「JSON 请求体
+    // 最大多少 KB」写进配置、显式交给 body-parser，超大 payload 在解析阶段就被拒成 413。
+    http: {
+      bodyLimitKb: env.HTTP_BODY_LIMIT_KB,
     },
     // Day 35：限流。ttl 在 env 里是秒（人读），这里换算成毫秒交给 @nestjs/throttler。
     rateLimit: {

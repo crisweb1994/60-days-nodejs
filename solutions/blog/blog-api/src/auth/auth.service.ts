@@ -4,6 +4,7 @@ import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
 import { ErrorCodes } from '../common/constants/error-codes';
 import { BusinessException } from '../common/exceptions/business.exception';
+import { LoginAttemptService } from '../cache/login-attempt.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailQueueService } from '../queue/mail-queue.service';
 import { LoginDto } from './dto/login.dto';
@@ -27,6 +28,9 @@ export class AuthService {
     // ★ 注意我们【await 的是入队】，不是【发信】——入队只是往 Redis 塞一条任务（毫秒级），
     //   真正发信由后台 worker 慢慢做。用户只等这「入队」一下，不等 SMTP 的秒级往返。
     @Optional() private readonly mail?: MailQueueService,
+    // Day 40：账号级登录锁定（防密码爆破）。@Optional：LoginAttemptService 由全局 CacheModule
+    //   提供，真实运行时恒在；标 @Optional 只为单元测试能 new AuthService 不传它。
+    @Optional() private readonly loginAttempts?: LoginAttemptService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -80,16 +84,33 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
+    // Day 40：账号级闸门——锁定优先于一切。已锁就省掉 bcrypt 比对（省 CPU），也避免再泄露信息。
+    // Redis 不通时 isLocked 恒 false（降级），登录照常走，绝不被这层安全配置拖垮。
+    if (await this.loginAttempts?.isLocked(dto.email)) {
+      // 423 Locked（RFC 4918）：语义比 429/403 更准——账号被锁，不是「频率太快」也不是「没权限」。
+      // HttpStatus 枚举里没有 423，用数字字面量（业务码 ACCOUNT_LOCKED 才是前端真正 key 的东西）。
+      throw new BusinessException(
+        ErrorCodes.ACCOUNT_LOCKED,
+        '账号因连续登录失败已被临时锁定，请稍后再试',
+        423 as HttpStatus,
+      );
+    }
+
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
     // 用户不存在也比对一次（用废弃哈希），保持常量时间；任何失败都回同一个错误
     const ok = await bcrypt.compare(dto.password, user?.password ?? DUMMY_HASH);
     if (!user || !ok) {
+      // Day 40：记一次失败（达阈值即锁）。不区分「用户不存在 / 密码错」——都对同一 email 计数，
+      // 否则「不存在的邮箱不计失败」这个差行为本身就成了枚举信号。
+      await this.loginAttempts?.recordFailure(dto.email);
       throw new BusinessException(
         ErrorCodes.INVALID_CREDENTIALS,
         '邮箱或密码错误',
         HttpStatus.UNAUTHORIZED,
       );
     }
+    // Day 40：成功即清零。否则用户偶发手滑几次后，计数器会在窗口内一直挂着顶到阈值。
+    await this.loginAttempts?.clear(dto.email);
     return this.authResponse(user, await this.tokens.issue(user));
   }
 

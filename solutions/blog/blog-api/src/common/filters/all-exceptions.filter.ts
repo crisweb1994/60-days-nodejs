@@ -23,7 +23,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const req = ctx.getRequest<Request>();
 
     const isHttp = exception instanceof HttpException;
-    const status = isHttp
+    let status = isHttp
       ? exception.getStatus()
       : HttpStatus.INTERNAL_SERVER_ERROR;
 
@@ -39,10 +39,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
       payload.message = '请求过于频繁，请稍后再试';
     }
 
+    // Day 40：body-parser 的「请求体过大」是个普通 Error（不是 HttpException），默认会落到 500。
+    // 但它本质是客户端错误（payload 太大），既不该污染 5xx 告警，也不该用「服务器内部错误」误导前端。
+    // 凭它的特征签名（type / status）识别出来，翻译成 413 BODY_TOO_LARGE。
+    if (!isHttp && isPayloadTooLarge(exception)) {
+      status = HttpStatus.PAYLOAD_TOO_LARGE;
+      payload.code = ErrorCodes.BODY_TOO_LARGE;
+      payload.message = '请求体过大，请减小提交内容';
+    }
+
     // 5xx 是服务端责任，必须能复盘；4xx 是客户端责任，量大时不打
-    if (!isHttp) {
+    if (!isHttp && status >= 500) {
       this.logger.error(
-        `${req.method} ${req.url} → 500`,
+        `${req.method} ${req.url} → ${status}`,
         exception instanceof Error ? exception.stack : String(exception),
       );
     } else if (status >= 500) {
@@ -66,4 +75,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
       timestamp: new Date().toISOString(),
     });
   }
+}
+
+// Day 40：识别 body-parser 抛的 PayloadTooLargeError。它在 Express 里不是 HttpException，
+// 但带 type='entity.too.large'、或 status/statusCode=413——两个签名都认，免得不同版本漏判。
+function isPayloadTooLarge(exception: unknown): boolean {
+  const e = exception as { type?: string; status?: number; statusCode?: number };
+  return (
+    e?.type === 'entity.too.large' ||
+    e?.status === HttpStatus.PAYLOAD_TOO_LARGE ||
+    e?.statusCode === HttpStatus.PAYLOAD_TOO_LARGE
+  );
 }
