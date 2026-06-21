@@ -1,0 +1,33 @@
+# ── 依赖：本地 node_modules 绝不能进镜像 ────────────────────────────────────
+# 它装的是【本机内核】的二进制（mac 上是 darwin 引擎 / darwin 的 sharp 包），
+# 打进 linux 镜像根本跑不了。镜像里会重新 pnpm install，拿匹配内核的版本。
+node_modules
+
+# ── 构建产物：镜像里自己编译，不抄本地的 dist ──────────────────────────────
+# 本地 dist 可能过期，COPY 进来只会误导。多阶段构建的 build 段会重新生成。
+dist
+
+# ── 密钥红线：.env 含 JWT 密钥、DB 密码 ──────────────────────────────────────
+# 打进镜像 = 进镜像层；推到 registry 后，任何能 pull 的人都能 docker save / docker
+# history 把层翻出来读。配置必须运行时注入（-e / env_file），绝不能烤进镜像。
+.env
+.env.local
+.env.*.local
+
+# ── 本地开发产物，运行时镜像不需要 ───────────────────────────────────────────
+test
+uploads
+coverage
+*.log
+.DS_Store
+.git
+.gitignore
+.vscode
+.idea
+
+# ── 文档与编排文件不属于运行时镜像 ───────────────────────────────────────────
+# README 等文档、compose 编排、本文件自身——都不进运行时镜像（减小 context + 攻击面）。
+*.md
+docker-compose*.yml
+Dockerfile
+.dockerignore

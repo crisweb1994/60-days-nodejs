@@ -3,6 +3,7 @@
   "version": "0.3.0",
   "description": "Blog API — Day 20 内存版 → Day 27 Prisma → Day 32-34 认证授权 → Day 35 安全防护 → Day 36 Redis 缓存 → Day 37 Redis 进阶（排行榜 + 分布式锁）→ Day 38 消息队列（BullMQ：异步邮件 / 重试 / 死信）→ Day 39 文件上传与存储（Multer + Sharp + S3/R2/MinIO）",
   "private": true,
+  "packageManager": "pnpm@10.15.0",
   "scripts": {
     "build": "nest build",
     "start": "nest start",
