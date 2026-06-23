@@ -4,3 +4,8 @@ dist
 .DS_Store
 .env
 .env.local
+
+# Day 39/42：本地存储后端的运行时产物（封面图），跑测试 / 跑服务会生成，不入库。
+# 应用启动会自己 mkdir 建目录（main.ts），所以留个 .gitkeep 占位即可。
+uploads/*
+!uploads/.gitkeep

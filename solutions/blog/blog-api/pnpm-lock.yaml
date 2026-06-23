@@ -32,6 +32,9 @@ importers:
       '@nestjs/swagger':
         specifier: ^7.4.2
         version: 7.4.2(@nestjs/common@10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@10.4.22)(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)
+      '@nestjs/terminus':
+        specifier: ^10.3.0
+        version: 10.3.0(@nestjs/common@10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@10.4.22)(@prisma/client@5.22.0(prisma@5.22.0))(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@nestjs/throttler':
         specifier: ^6.5.0
         version: 6.5.0(@nestjs/common@10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@10.4.22)(reflect-metadata@0.2.2)
@@ -537,6 +540,54 @@ packages:
       class-validator:
         optional: true
 
+  '@nestjs/terminus@10.3.0':
+    resolution: {integrity: sha512-vOJGCwt1OgrFuuxWQwPoaHqy9m9CfIk2qMUX2mosZLK5dFVJSEjHXrklkh3/Fw9PiUnfzvYFfiAdJRzUaxx+5Q==}
+    peerDependencies:
+      '@grpc/grpc-js': '*'
+      '@grpc/proto-loader': '*'
+      '@mikro-orm/core': '*'
+      '@mikro-orm/nestjs': '*'
+      '@nestjs/axios': ^1.0.0 || ^2.0.0 || ^3.0.0
+      '@nestjs/common': ^9.0.0 || ^10.0.0
+      '@nestjs/core': ^9.0.0 || ^10.0.0
+      '@nestjs/microservices': ^9.0.0 || ^10.0.0
+      '@nestjs/mongoose': ^9.0.0 || ^10.0.0
+      '@nestjs/sequelize': ^9.0.0 || ^10.0.0
+      '@nestjs/typeorm': ^9.0.0 || ^10.0.0
+      '@prisma/client': '*'
+      mongoose: '*'
+      reflect-metadata: 0.1.x || 0.2.x
+      rxjs: 7.x
+      sequelize: '*'
+      typeorm: '*'
+    peerDependenciesMeta:
+      '@grpc/grpc-js':
+        optional: true
+      '@grpc/proto-loader':
+        optional: true
+      '@mikro-orm/core':
+        optional: true
+      '@mikro-orm/nestjs':
+        optional: true
+      '@nestjs/axios':
+        optional: true
+      '@nestjs/microservices':
+        optional: true
+      '@nestjs/mongoose':
+        optional: true
+      '@nestjs/sequelize':
+        optional: true
+      '@nestjs/typeorm':
+        optional: true
+      '@prisma/client':
+        optional: true
+      mongoose:
+        optional: true
+      sequelize:
+        optional: true
+      typeorm:
+        optional: true
+
   '@nestjs/throttler@6.5.0':
     resolution: {integrity: sha512-9j0ZRfH0QE1qyrj9JjIRDz5gQLPqq9yVC2nHsrosDVAfI5HHw08/aUAWx9DZLSdQf4HDkmhTTEGLrRFHENvchQ==}
     peerDependencies:
@@ -783,6 +834,9 @@ packages:
   ajv@8.20.0:
     resolution: {integrity: sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==}
 
+  ansi-align@3.0.1:
+    resolution: {integrity: sha512-IOfwwBF5iczOjp/WeY4YxyjqAFMQoZufdQWDd19SEExbVLNXqvpzSJ/M7Za4/sCPmQ0+GRquoA7bGcINcxew6w==}
+
   ansi-colors@4.1.3:
     resolution: {integrity: sha512-/6w/C21Pm1A7aZitlI5Ni/2J6FFQN8i1Cvz3kHABAAbw93v/NlvKdVOqz7CCWz/3iv/JplRSEEZ83XION15ovw==}
     engines: {node: '>=6'}
@@ -858,6 +912,10 @@ packages:
   bowser@2.14.1:
     resolution: {integrity: sha512-tzPjzCxygAKWFOJP011oxFHs57HzIhOEracIgAePE4pqB3LikALKnSzUyU4MGs9/iCEUuHlAJTjTc5M+u7YEGg==}
 
+  boxen@5.1.2:
+    resolution: {integrity: sha512-9gYgQKXx+1nP8mP7CzFyaUARhg7D3n1dF/FnErWmu9l6JvGpNUN278h0aSb+QjoiKSWG+iZ3uHrcqk0qrY9RQQ==}
+    engines: {node: '>=10'}
+
   brace-expansion@1.1.14:
     resolution: {integrity: sha512-MWPGfDxnyzKU7rNOW9SP/c50vi3xrmrua/+6hfPbCS2ABNWfx24vPidzvC7krjU/RTo235sV776ymlsMtGKj8g==}
 
@@ -919,6 +977,10 @@ packages:
     resolution: {integrity: sha512-P8BjAsXvZS+VIDUI11hHCQEv74YT67YUi5JJFNWIqL235sBmjX4+qx9Muvls5ivyNENctx46xQLQ3aTuE7ssaQ==}
     engines: {node: '>=6'}
 
+  camelcase@6.3.0:
+    resolution: {integrity: sha512-Gmy6FhYlCY7uOElZUSbxo2UCDH8owEk996gkbrpsgGtrJLM3J7jGxl9Ic7Qwwj4ivOE5AWZWRMecDdF7hqGjFA==}
+    engines: {node: '>=10'}
+
   caniuse-lite@1.0.30001792:
     resolution: {integrity: sha512-hVLMUZFgR4JJ6ACt1uEESvQN1/dBVqPAKY0hgrV70eN3391K6juAfTjKZLKvOMsx8PxA7gsY1/tLMMTcfFLLpw==}
 
@@ -933,6 +995,10 @@ packages:
   chardet@0.7.0:
     resolution: {integrity: sha512-mT8iDcrh03qDGRRmoA2hmBJnxpllMR+0/0qlzjqZES6NdiWDcZkCNAk4rPFZ9Q85r27unkiNNg8ZOiwZXBHwcA==}
 
+  check-disk-space@3.4.0:
+    resolution: {integrity: sha512-drVkSqfwA+TvuEhFipiR1OC9boEGZL5RrWvVsOthdcvQNXyCCuKkEiTOTXZ7qxSf/GLwq4GvzfrQD/Wz325hgw==}
+    engines: {node: '>=16'}
+
   chokidar@3.6.0:
     resolution: {integrity: sha512-7VT13fmjotKpGipCW9JEQAusEPE+Ei8nl6/g4FBAmIm0GOOLMua9NDDo/DWp0ZAxCr3cPq5ZpBqmPAQgDda2Pw==}
     engines: {node: '>= 8.10.0'}
@@ -946,6 +1012,10 @@ packages:
 
   class-validator@0.14.4:
     resolution: {integrity: sha512-AwNusCCam51q703dW82x95tOqQp6oC9HNUl724KxJJOfnKscI8dOloXFgyez7LbTTKWuRBA37FScqVbJEoq8Yw==}
+
+  cli-boxes@2.2.1:
+    resolution: {integrity: sha512-y4coMcylgSCdVinjiDBuR8PCC2bLjyGTwEmPb9NHR/QaNU6EUOXcTY/s6VjGMD6ENSEaeQYHCY0GNGS5jfMwPw==}
+    engines: {node: '>=6'}
 
   cli-cursor@3.1.0:
     resolution: {integrity: sha512-I/zHAwsKf9FqGoXM4WWRACob9+SNukZTd94DWF57E4toouRulbCxcUh6RKUEOQlYTHJnzkPMySvPNaaSLNfLZw==}
@@ -2068,6 +2138,10 @@ packages:
   tslib@2.8.1:
     resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
 
+  type-fest@0.20.2:
+    resolution: {integrity: sha512-Ne+eE4r0/iWnpAxD852z3A+N0Bt5RN//NjJwRd2VFHEmrywxf5vsZlh4R6lixl6B+wz/8d+maTSAkN1FIkI3LQ==}
+    engines: {node: '>=10'}
+
   type-fest@0.21.3:
     resolution: {integrity: sha512-t0rzBq87m3fVcduHDUFhKmyyX+9eo6WQjZvf51Ea/M0Q7+T374Jp1aUiyUl0GKxp8M/OETVHSDvmkyPgvX+X2w==}
     engines: {node: '>=10'}
@@ -2170,6 +2244,10 @@ packages:
     resolution: {integrity: sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==}
     engines: {node: '>= 8'}
     hasBin: true
+
+  widest-line@3.1.0:
+    resolution: {integrity: sha512-NsmoXalsWVDMGupxZ5R08ka9flZjjiLvHVAWYOKtiKM8ujtZWr9cRffak+uSE48+Ob8ObalXpwyeUiyDD6QFgg==}
+    engines: {node: '>=8'}
 
   wrap-ansi@6.2.0:
     resolution: {integrity: sha512-r6lPcBGxZXlIcymEu7InxDMhdW0KDxpLgoFLcguasxCaJ/SOIZwINatK9KY/tf+ZrlywOKU0UDj3ATXUBfxJXA==}
@@ -2770,6 +2848,17 @@ snapshots:
       class-transformer: 0.5.1
       class-validator: 0.14.4
 
+  '@nestjs/terminus@10.3.0(@nestjs/common@10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@10.4.22)(@prisma/client@5.22.0(prisma@5.22.0))(reflect-metadata@0.2.2)(rxjs@7.8.2)':
+    dependencies:
+      '@nestjs/common': 10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/core': 10.4.22(@nestjs/common@10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@10.4.22)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      boxen: 5.1.2
+      check-disk-space: 3.4.0
+      reflect-metadata: 0.2.2
+      rxjs: 7.8.2
+    optionalDependencies:
+      '@prisma/client': 5.22.0(prisma@5.22.0)
+
   '@nestjs/throttler@6.5.0(@nestjs/common@10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@10.4.22)(reflect-metadata@0.2.2)':
     dependencies:
       '@nestjs/common': 10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -3083,6 +3172,10 @@ snapshots:
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
+  ansi-align@3.0.1:
+    dependencies:
+      string-width: 4.2.3
+
   ansi-colors@4.1.3: {}
 
   ansi-escapes@4.3.2:
@@ -3150,6 +3243,17 @@ snapshots:
       - supports-color
 
   bowser@2.14.1: {}
+
+  boxen@5.1.2:
+    dependencies:
+      ansi-align: 3.0.1
+      camelcase: 6.3.0
+      chalk: 4.1.2
+      cli-boxes: 2.2.1
+      string-width: 4.2.3
+      type-fest: 0.20.2
+      widest-line: 3.1.0
+      wrap-ansi: 7.0.0
 
   brace-expansion@1.1.14:
     dependencies:
@@ -3222,6 +3326,8 @@ snapshots:
 
   callsites@3.1.0: {}
 
+  camelcase@6.3.0: {}
+
   caniuse-lite@1.0.30001792: {}
 
   chalk@4.1.2:
@@ -3232,6 +3338,8 @@ snapshots:
   chalk@5.6.2: {}
 
   chardet@0.7.0: {}
+
+  check-disk-space@3.4.0: {}
 
   chokidar@3.6.0:
     dependencies:
@@ -3254,6 +3362,8 @@ snapshots:
       '@types/validator': 13.15.10
       libphonenumber-js: 1.13.2
       validator: 13.15.35
+
+  cli-boxes@2.2.1: {}
 
   cli-cursor@3.1.0:
     dependencies:
@@ -4399,6 +4509,8 @@ snapshots:
 
   tslib@2.8.1: {}
 
+  type-fest@0.20.2: {}
+
   type-fest@0.21.3: {}
 
   type-is@1.6.18:
@@ -4506,6 +4618,10 @@ snapshots:
   which@2.0.2:
     dependencies:
       isexe: 2.0.0
+
+  widest-line@3.1.0:
+    dependencies:
+      string-width: 4.2.3
 
   wrap-ansi@6.2.0:
     dependencies:

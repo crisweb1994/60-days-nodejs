@@ -1,0 +1,2 @@
+# docker compose 自动读取本目录的 .env 做变量插值——里面有 JWT 密钥、DB 密码，不提交。
+.env

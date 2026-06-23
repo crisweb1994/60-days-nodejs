@@ -1,7 +1,7 @@
 {
   "name": "blog-api",
   "version": "0.3.0",
-  "description": "Blog API — Day 20 内存版 → Day 27 Prisma → Day 32-34 认证授权 → Day 35 安全防护 → Day 36 Redis 缓存 → Day 37 Redis 进阶（排行榜 + 分布式锁）→ Day 38 消息队列（BullMQ：异步邮件 / 重试 / 死信）→ Day 39 文件上传与存储（Multer + Sharp + S3/R2/MinIO）",
+  "description": "Blog API — Day 20 内存版 → Day 27 Prisma → Day 32-34 认证授权 → Day 35 安全防护 → Day 36 Redis 缓存 → Day 37 Redis 进阶（排行榜 + 分布式锁）→ Day 38 消息队列（BullMQ：异步邮件 / 重试 / 死信）→ Day 39 文件上传与存储（Multer + Sharp + S3/R2/MinIO）→ Day 40 安全加固 → Day 41 Docker 镜像 → Day 42 Docker Compose 编排（迁移 job + 就绪探针）",
   "private": true,
   "packageManager": "pnpm@10.15.0",
   "scripts": {
@@ -12,6 +12,7 @@
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "db:reset": "prisma migrate reset --force",
     "test": "node --test --test-concurrency=1 -r ts-node/register -r ./test/setup.cjs test/*.test.ts",
@@ -38,6 +39,7 @@
     "@nestjs/mapped-types": "^2.0.5",
     "@nestjs/platform-express": "^10.4.0",
     "@nestjs/swagger": "^7.4.2",
+    "@nestjs/terminus": "^10.3.0",
     "@nestjs/throttler": "^6.5.0",
     "@prisma/client": "^5.22.0",
     "bcryptjs": "^3.0.3",
