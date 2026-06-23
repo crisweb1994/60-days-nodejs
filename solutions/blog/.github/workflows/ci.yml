@@ -1,0 +1,119 @@
+# ===========================================================================
+# CI：代码质量闸门 —— 每次 push / PR 都跑：装依赖 → 类型检查 → 迁移 → 测试
+# ---------------------------------------------------------------------------
+# 设计原则（详见 days/day-43/README）：
+#   1. 快速失败 —— 类型错误在合并前就拦下，绝不带进 main。
+#   2. 环境隔离 —— PG / Redis 用 service container，每次跑都是干净实例，不依赖本机
+#      残留状态（queue.e2e 那 2 个「本地 flaky」用例正是脏状态假象的反面教材）。
+#   3. 幂等可复现 —— frozen-lockfile 锁版本；迁移用 migrate deploy 只应用、不生成。
+#
+# ⚠️ 这份文件放在 solutions/blog/.github/workflows/ 下，是为了和前几天的产物
+#    （Day 41 的 Dockerfile、Day 42 的 docker-compose.yml）一样自包含在 solutions/blog 里。
+#    但 GitHub Actions 【只执行仓库根目录的 .github/workflows/】——要真正启用，需把它
+#    复制/软链到仓库根（见 README「§ 为什么放在 solutions/blog」）。这是 CI 日最常见的坑之一。
+# ===========================================================================
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'solutions/blog/blog-api/**'
+      - 'solutions/blog/.github/workflows/ci.yml'
+  pull_request:
+    paths:
+      - 'solutions/blog/blog-api/**'
+      - 'solutions/blog/.github/workflows/ci.yml'
+
+# 同一分支的新一次 push 取消正在跑的旧 run，省额度（PR 期间频繁 push 时尤其值）。
+# group 含 ref：不同分支互不干扰；同一个分支的多次 push 只保留最新。
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: 类型检查 + 测试
+    runs-on: ubuntu-latest
+
+    # ── service container：CI 的「依赖」───────────────────────────────────
+    # 和 docker-compose 的 depends_on + healthcheck 同构——只是这里由 GHA 的 service
+    # container 机制起，端口映射到 runner 的 localhost（所以 DATABASE_URL 用 localhost:5432，
+    # 不是服务名：runner 上没有 compose 网络）。容器在 job 开始时起、结束时销毁，每次干净。
+    services:
+      postgres:
+        image: postgres:16-alpine        # 和 docker-compose / blog-db 同一版本
+        env:
+          POSTGRES_USER: blog
+          POSTGRES_PASSWORD: blog_dev_pwd
+          POSTGRES_DB: blog              # POSTGRES_USER 是超级用户，能建 schema=blog_api
+        ports: ['5432:5432']
+        # 健康检查没过，quality 步骤不会开始——等价于 compose 的 service_healthy 闸门。
+        options: >-
+          --health-cmd "pg_isready -U blog -d blog"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      # 指向 service container（localhost，不是服务名——GHA runner 上没有 compose 网络）
+      DATABASE_URL: postgresql://blog:blog_dev_pwd@localhost:5432/blog?schema=blog_api
+      REDIS_URL: redis://localhost:6379
+      # 测试需要的非密钥配置（和 test/setup.cjs 的默认值对齐，这里显式写明，可读 + 自文档）
+      JWT_ACCESS_SECRET: ci-jwt-access-secret-at-least-thirty-two-chars-long
+      JWT_ACCESS_TTL: '3600'             # 测试用长 TTL，避免慢机器上 token 半路过期
+      GITHUB_CLIENT_ID: ci-client-id
+      GITHUB_CLIENT_SECRET: ci-client-secret
+      GITHUB_CALLBACK_URL: http://localhost:3000/auth/github/callback
+      UPLOAD_MAX_BYTES: '1024'
+      CORS_ORIGIN: http://localhost:5173
+      PAGE_LIMIT: '20'
+
+    defaults:
+      run:
+        # 所有 run 步骤都在 blog-api 目录下（uses 步骤不受影响，仍在仓库根执行）
+        working-directory: solutions/blog/blog-api
+
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 安装 pnpm
+        # corepack 也能读 package.json 的 packageManager 字段；这里显式版本，
+        # 和 package.json 的 "pnpm@10.15.0" 对齐，避免任何环境差异。
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm                    # 命中 pnpm store，二次跑 install 秒级
+          cache-dependency-path: solutions/blog/blog-api/pnpm-lock.yaml
+
+      - name: 装依赖（锁版本）
+        run: pnpm install --frozen-lockfile
+        # frozen-lockfile：lockfile 和 package.json 不一致就直接失败——
+        # 防止「本地改了依赖却忘了提交 lockfile」悄悄混进 CI。
+
+      - name: 类型检查
+        # 项目没配 eslint，拿 TypeScript 编译器当静态闸门：--noEmit 只检查、不产出。
+        # 详见 README「§ 为什么用 tsc --noEmit 当 lint」。
+        run: pnpm exec tsc --noEmit
+
+      - name: 迁移（prisma migrate deploy）
+        # 必须在测试之前：测试要读写 schema=blog_api 下的表，表不存在会全挂。
+        # migrate deploy 只【应用】已有迁移、绝不生成——和 Day 42 compose 的 migrate job 同一个命令。
+        run: pnpm exec prisma migrate deploy
+
+      - name: 测试
+        run: pnpm test

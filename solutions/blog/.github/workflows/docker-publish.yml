@@ -1,0 +1,102 @@
+# ===========================================================================
+# CD：构建镜像并推送到 GHCR（GitHub Container Registry）—— 合并进 main 或打 tag 时跑
+# ---------------------------------------------------------------------------
+# 这是「部署」的实质前半段：把一个可重现的镜像产物发布到 registry，运行环境从那里拉。
+# 选 GHCR（ghcr.io）而非 Docker Hub：和代码同一个 GitHub 账号，用 run 自动注入的
+# GITHUB_TOKEN 认证，不依赖外部账号/密码（本机连不上 Docker Hub 的痛点，在 CI 里这么绕开）。
+#
+# 和 ci.yml 一样：本文件在 solutions/blog/.github/workflows/，启用前需放到仓库根。
+# ===========================================================================
+name: 发布镜像
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']           # 打 v1.2.3 这类 tag → 产出带版本号的镜像 tag
+  workflow_dispatch:        # 手动触发，方便随时重发
+
+jobs:
+  build-and-push:
+    name: 构建并推送镜像
+    runs-on: ubuntu-latest
+
+    # 推到 GHCR 需要写 packages 的权限（默认 token 只有读）。contents:read 保留拉代码。
+    permissions:
+      packages: write
+      contents: read
+
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Buildx
+        # buildx 是 build-push-action 的底层依赖；同时启用 BuildKit，复用 Day 41 Dockerfile
+        # 里的 `RUN --mount=type=cache`（pnpm store 跨构建复用），二次构建跳过重装依赖。
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GHCR
+        # GITHUB_TOKEN 是每次 run 自动注入的临时令牌，用它登 ghcr.io——无需配任何 secret。
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 生成镜像标签
+        # 从 git 元数据自动算 tag：main 分支 → latest + 分支名；v1.2.3 tag → 1.2.3；
+        # 每次 → 一个短 sha。省去手写 echo 拼 tag，语义统一。
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # GHCR 要求全小写；若 owner 含大写需先 lowercase（见 README §思考题）。
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha,prefix=sha-,format=short
+
+      - name: 构建并推送
+        uses: docker/build-push-action@v6
+        with:
+          context: solutions/blog/blog-api   # Day 41 的 Dockerfile 在这里
+          file: solutions/blog/blog-api/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # BuildKit 缓存持久化到 GHA cache（cache-from/to=gha），跨 run 复用 layers。
+          # mode=max 连中间层也缓存，比默认的 min 命中率高得多。
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 输出镜像摘要
+        # 把推送出的镜像 tag 打到 run summary，方便部署/排查时精确引用「这次构建的产物」。
+        run: |
+          {
+            echo "### 已发布镜像"
+            echo ""
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── 部署（示意）：真正的「把镜像拉到生产并滚动替换」环节 ──────────────────
+  # 这里只画骨架、不连真实主机——README 讲清为什么。真接上时把 ssh / 编排器调用填进来。
+  # 注意它 needs build-and-push：镜像没发布成功，绝不部署（fail-closed）。
+  deploy:
+    name: 部署（示意）
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'   # 只在 main 合并时「部署」，tag / 手动不触发
+    environment:
+      name: production                    # 配上 GHA Environments 可加人工审批 / 分支保护
+    steps:
+      - name: 拉新镜像并滚动替换（示意）
+        run: |
+          echo "::notice::这一步是部署的【形状】，未连真实主机（README §诚实清单 说明原因）。"
+          echo "真实部署通常是把刚发布的镜像 SHA 拉到目标环境并滚动替换："
+          echo "  ssh prod 'docker compose pull api && docker compose up -d api'"
+          echo "或交给编排器（k8s：更新 Deployment 的 image tag；ECS / Nomad 类似）。"
+          echo "触发它的输入（镜像 SHA / tag）来自 build-and-push 步骤的 outputs。"
+          # ↓ 真接上时取消注释，并把 PROD_HOST / SSH 私钥配成 Encrypted Secret：
+          # ssh -o StrictHostKeyChecking=no "${{ secrets.PROD_HOST }}" \
+          #   "docker compose pull api && docker compose up -d --remove-orphans api"
