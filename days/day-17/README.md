@@ -60,33 +60,40 @@ HTTP Request
 
 ### 2. Middleware — Express 风格的早期拦截
 
-Middleware 是离平台（Express/Fastify）最近的一层，写法和 Express 完全一样：
+Middleware 是离平台（Express/Fastify）最近的一层，写法和 Express 完全一样。先把 import 备齐——这是新手最容易卡的一步：`NestMiddleware / Injectable` 来自 `@nestjs/common`，而 `Request / Response / NextFunction` 来自 `@types/express`（通过 `import ... from 'express'` 引入）。
 
 ```ts
+import { Injectable, Logger, NestMiddleware } from '@nestjs/common';
+import { NextFunction, Request, Response } from 'express';
+
 // 函数式 middleware
 export function logger(req: Request, res: Response, next: NextFunction) {
-  console.log(`[${req.method}] ${req.url}`);
+  console.log(`[${req.method}] ${req.originalUrl}`);
   next();
 }
 
 // 类式 middleware（推荐，可注入依赖）
 @Injectable()
 export class LoggerMiddleware implements NestMiddleware {
-  constructor(private readonly logger: AppLogger) {}
+  // 直接用 NestJS 内置 Logger，前缀自动带上类名，比 console.log 更可控
+  private readonly logger = new Logger(LoggerMiddleware.name);
 
   use(req: Request, res: Response, next: NextFunction) {
     const start = Date.now();
     res.on('finish', () => {
-      this.logger.log(`${req.method} ${req.url} ${res.statusCode} (${Date.now() - start}ms)`);
+      // originalUrl 而非 url：挂载子路由时 url 会被重写，originalUrl 才是完整请求路径
+      this.logger.log(`${req.method} ${req.originalUrl} ${res.statusCode} (${Date.now() - start}ms)`);
     });
     next();
   }
 }
 ```
 
-注册方式不是装饰器，而是在 Module 里实现 `NestModule.configure`：
+注册方式不是装饰器，而是在 Module 里实现 `NestModule.configure`，这里同样要把 `NestModule / MiddlewareConsumer / RequestMethod` 从 `@nestjs/common` 引进来：
 
 ```ts
+import { Module, NestModule, MiddlewareConsumer, RequestMethod } from '@nestjs/common';
+
 @Module({ /* ... */ })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
@@ -97,6 +104,11 @@ export class AppModule implements NestModule {
   }
 }
 ```
+
+> **「类型名称对不上、是不是版本问题？」** 常有人在不同文章里看到 `use` 的参数写成 `req: any, res: any`，或是 `FastifyRequest / FastifyReply`，和这里的 `Request / Response / NextFunction` 对不上，怀疑是不是 NestJS 版本问题。其实不是——`@nestjs/common` 只提供 `NestMiddleware` 这个接口，**HTTP 相关类型完全由底层平台决定**：
+> - **Express 平台**（Nest 默认）：`import { Request, Response, NextFunction } from 'express'`，类型来自 `@types/express`，Express 4 与 5 之间这几个类型稳定一致。
+> - **Fastify 平台**：没有 `Request/Response/NextFunction`，要换成 `FastifyRequest / FastifyReply`，而且中间件写法也不同（走 Fastify 的 `addHook` 风格，没有 `implements NestMiddleware` 那一套）。
+> - `NestMiddleware` 接口本身把参数声明成 `any`，显式标成 Express 类型只是为了拿到自动补全和类型检查，不是强制的。
 
 **关键限制**：Middleware 跑的时候，Nest 还没决定要把请求交给哪个 handler，所以它**拿不到 `ExecutionContext`**——不知道当前是哪个 Controller 的哪个方法、上面有什么自定义装饰器。需要这些信息？用 Guard 或 Interceptor。
 
