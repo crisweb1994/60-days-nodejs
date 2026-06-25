@@ -71,18 +71,26 @@ RUN addgroup -S app && adduser -S app -G app
 # --ignore-scripts 跳过 postinstall（=prisma generate）——生产装时 prisma CLI 是
 # devDep 没装，postinstall 会炸。生成的 client 是构建产物、不是 npm 包，下一行单独拷。
 RUN corepack enable
+# ★ 先 COPY package.json + lockfile 再 install（Day 44 实跑发现的坑）：
+#   corepack 靠 package.json 里的 packageManager 字段决定用哪个 pnpm。没有 package.json 在场，
+#   corepack 会去拉 latest（目前 11.x，已不兼容 Node 20，启动即崩 ERR_UNKNOWN_BUILTIN_MODULE）。
+#   --frozen-lockfile 也要求 lockfile 在场。这和 deps 段同一个顺序，顺带让改业务代码不 bust 装依赖这层缓存。
+COPY package.json pnpm-lock.yaml ./
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --prod --ignore-scripts
 
 # 把 deps 段【在容器内生成】的 Prisma client 拷过来：含查询引擎 .node 二进制（linux-musl）。
-# 注意只拷 .prisma 这一个生成物目录，而不是整份 node_modules——pnpm 用 .pnsm 虚拟存储
-# + symlink，跨阶段 COPY 整个 node_modules 会把符号链接搞坏。让 runner 自己 install
-# 重建结构，只把生成物单独补进来，是 pnpm + Docker 多阶段的正确姿势。
-COPY --from=deps /app/node_modules/.prisma ./node_modules/.prisma
+# ★ pnpm 把生成物放在【虚拟存储】.pnpm/@prisma+client@<ver>/node_modules/.prisma/client，
+#   不是顶层 node_modules/.prisma（Day 44 实跑发现：顶层那 path 不存在，COPY 直接 not found）。
+#   @prisma/client 运行时按「相对自己包目录」解析 ../.prisma/client，所以必须拷到【同构】的
+#   虚拟存储路径，runner 里 `pnpm install --prod --ignore-scripts` 已经把 @prisma/client 装到了
+#   同一个 .pnpm/@prisma+client@<ver>/ 位置（只是没跑 generate），这里只把生成物补进去。
+#   版本号随 pnpm-lock.yaml 固定（5.22.0）；升级 @prisma/client 时这条路径要同步改。
+COPY --from=deps /app/node_modules/.pnpm/@prisma+client@5.22.0_prisma@5.22.0/node_modules/.prisma \
+                ./node_modules/.pnpm/@prisma+client@5.22.0_prisma@5.22.0/node_modules/.prisma
 
 # 编译产物：纯 JS，运行时不需要 typescript、也不需要 ts 源码。
 COPY --from=build /app/dist ./dist
-COPY package.json ./
 
 # 本地存储后端写封面图的目录。mkdir 默认归 root，非 root 的 app 写不进去 → 上传必 500。
 # 建好就 chown 给 app。S3 后端用不到，留个空目录也不碍事。
