@@ -1,0 +1,65 @@
+# ===========================================================================
+# blog-api 部署到 Fly.io —— Day 44
+# ---------------------------------------------------------------------------
+# 为什么给 Day 41 打出来的镜像选 Fly（或 Railway），而不是 Vercel：
+# Day 41-43 产出的是一个【常驻进程】——Nest 服务器 + BullMQ worker 跑在同一个
+# node 进程里。Vercel 的执行模型是【无服务器函数】：请求来才起、跑完即灭，没有
+# "一直开着的进程"。这套里有两样东西和它天然打架：
+#   1. BullMQ worker（src/queue/mail.processor.ts）：注册后异步发邮件靠它常驻轮询
+#      Redis。函数一灭，队列里排队的邮件就永远不被消费。
+#   2. 本地文件存储（/app/uploads）：Vercel 的文件系统只读且临时，写进去下次请求就没了。
+# Fly / Railway 都是"给你一台/几台常驻的 Docker 主机"——常驻进程、可写卷、想缩到 0 也行，
+# 才是这套镜像的正确归宿。Vercel 留给纯前端 / 边缘函数那类工作负载。
+#
+# ★ 本机没法 `fly deploy`（要联网 + Fly 账号 + 信用卡），这份按【Fly 官方 fly.toml 约定】
+#   写，字段含义以 https://fly.io/docs/reference/configuration/ 为准。跑法见 day-44 README。
+#   和 Dockerfile 放【同一目录】：fly 的构建上下文 = fly.toml 所在目录，上一层会导致
+#   Dockerfile 里的 COPY package.json / COPY src 相对路径找不到文件。
+# ===========================================================================
+
+# app 名和 region 由 `fly launch` 首次生成并回写到这里；下方是占位，部署时会被覆盖。
+app = "blog-api"
+primary_region = "nrt"   # 东京；按你和你用户的地区换成 sin / lhr / iad 等
+
+[build]
+# Dockerfile 就在同目录（solutions/blog/blog-api/）。不写 builder，Fly 默认用 Dockerfile 构建。
+dockerfile = "Dockerfile"
+
+[http_service]
+# 应用监听在 PORT（config 默认 3000，见 config.validation.ts）。Fly 把外部 443/80 流量
+# 代理到这个 internal_port。两边必须对上：改这里就得保证应用真的在 3000 监听。
+internal_port = 3000
+force_https = true                # http 请求自动 301 到 https（Day 44 域名 + HTTPS 那节的落地）
+# ★ 这里【故意关掉自动停机】。我们进程里跑着 BullMQ worker——把空闲机器停掉，等于让
+#   排队的邮件任务没人消费（来流量才补发）。要省钱可以开 auto_stop_machines = true，
+#   但开了就要接受"没流量时邮件不即时发"。min_machines_running = 1 至少留一台常驻兜底。
+auto_stop_machines = false
+auto_start_machines = true
+min_machines_running = 1          # ≥1 台常驻：保住 worker 轮询 + 首请求不必冷启动
+
+  # 流量健康检查：决定这台机器"能不能接流量"。打 /health/ready（查 DB + Redis，见
+  # health.controller.ts）——它返回 503 说明下游没就绪，Fly 就不把流量导过来（和 Day 42
+  # compose depends_on: service_healthy 的就绪闸门一个意思）。想更宽松（只问进程在不在、
+  # 不碰下游）就换成 path = "/health"。grace_period 给足：Nest 冷启动 + Prisma 建连接要
+  # 几秒，太短会被误判不健康而反复重启（Day 42 compose 的 start_period 同理）。
+  [[http_service.checks]]
+    grace_period = "30s"
+    interval = "20s"
+    method = "GET"
+    path = "/health/ready"
+    timeout = "5s"
+
+# 机型：起步最小够用。Nest + Prisma + sharp（图片归一化）吃点内存，给 512mb 起步，
+# 压测 / 真实流量上来再加。cpu_kind = "shared" 是和别的机器共享核（便宜），独享用 "performance"。
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+# ── 持久卷（可选，默认不开）────────────────────────────────────────────────
+# 生产【强烈建议用 S3/R2 存封面图】（见 .env.production.example 的 STORAGE_BACKEND=s3）：
+# 对象存储天然多副本、跨实例共享、不受机器重启影响。下面的卷只在"铁了心用本地存储 +
+# 单实例"时才取消注释——多实例时本地卷是【各自一份、互不共享】的：A 实例传的图，B 读不到。
+# [[mounts]]
+#   source = "uploads_vol"
+#   destination = "/app/uploads"

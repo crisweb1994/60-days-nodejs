@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <strong>🚧 WIP：</strong> 当前已完整整理 <strong>Day 1-34</strong>（阶段一 + 阶段二全部 + 阶段三的认证授权：Session/JWT、注册登录、RBAC、OAuth 第三方登录，含 NestJS + Prisma + PostgreSQL 博客 API v1.0 里程碑、可运行参考实现），Day 35-60 正在持续补充详细讲解、练习与参考答案。
+  <strong>🚧 WIP：</strong> 当前已完整整理 <strong>Day 1-44</strong>（阶段一 + 阶段二全部 + 阶段三的认证/安全/缓存全部 + 阶段四的 Docker / CI/CD / 云部署，含 NestJS + Prisma + PostgreSQL 博客 API v2.0 里程碑、可运行参考实现），Day 45-60 正在持续补充详细讲解、练习与参考答案。
 </p>
 
 <p align="center">
@@ -39,7 +39,7 @@
 
 这个仓库的目标是：**用 60 天时间，帮助有前端基础的工程师系统掌握 Node.js 全栈开发**，从核心原理到生产部署，逐步建立完整的全栈知识体系和项目交付能力。
 
-> 当前状态说明：仓库已完整完成 **Day 1-34**——**阶段一**（Node.js 核心，Day 1-15）+ **阶段二**（后端框架与数据库，Day 16-30）全部正文、练习与可运行参考实现，博客 API 已封版到 **v1.0**（NestJS + Prisma + PostgreSQL，含分页/搜索/并发控制/OpenAPI 文档）；**阶段三**（认证、安全与缓存，Day 31-40）进行中——Day 31 认证基础（Session vs JWT）+ Day 32 JWT 实战（注册/登录、bcrypt、Access+Refresh 双 Token）+ Day 33 RBAC 授权（角色守卫 + 资源级权限）+ Day 34 OAuth 2.0（GitHub 第三方登录、授权码模式）均已接入 blog-api。**Day 35-60** 已建立路线图与每日页面骨架，详细正文、练习模板与参考答案会继续迭代补充。
+> 当前状态说明：仓库已完整完成 **Day 1-44**——**阶段一**（Node.js 核心，Day 1-15）+ **阶段二**（后端框架与数据库，Day 16-30）+ **阶段三**（认证、安全与缓存，Day 31-40）全部正文、练习与可运行参考实现，博客 API 已封版到 **v2.0**（NestJS + Prisma + PostgreSQL，在 v1.0 基础上接入 JWT/RBAC/OAuth 认证、Web 安全防护、Redis 缓存、消息队列与文件上传，详见 Day 40 里程碑）；**阶段四**（DevOps 与部署，Day 41-45）进行中——Day 41 Docker 基础 + Day 42 Docker Compose 编排 + Day 43 CI/CD 流水线（GitHub Actions）+ Day 44 云部署实战（Fly/Railway + 托管 DB/Redis）已完成。**Day 45-60** 已建立路线图与每日页面骨架，详细正文、练习模板与参考答案会继续迭代补充。
 
 ### 这个仓库有什么特点？
 
@@ -95,7 +95,7 @@ cd days/day-01
 - 按天推进，共 60 天完成完整学习闭环
 - 每天投入 3 到 4 小时，兼顾系统学习与动手实践
 - 建议按顺序学习，避免跳过阶段性里程碑
-- Day 1-34 已有完整正文与可运行参考实现，建议按顺序学完；Day 35 起可结合路线图、推荐资源和你自己的练习持续推进
+- Day 1-44 已有完整正文与可运行参考实现，建议按顺序学完；Day 45 起可结合路线图、推荐资源和你自己的练习持续推进
 
 ### 学习建议
 
@@ -215,13 +215,13 @@ cd days/day-01
 
 ## 项目实战
 
-本教程围绕三个渐进式项目展开。博客系统（Day 16-30 部分）已有完整可运行的参考实现，见 [`solutions/blog/`](./solutions/blog/)；其余项目代码与脚手架会随更新进度逐步补充。
+本教程围绕三个渐进式项目展开。博客系统（Day 16-40）已有完整可运行的参考实现，见 [`solutions/blog/`](./solutions/blog/)；其余项目代码与脚手架会随更新进度逐步补充。
 
 ### 1. 🟢 迷你 TODO API（Day 8-10）
 用原生 Node.js 构建，不使用任何框架，理解底层原理。
 
 ### 2. 🔵 博客系统（Day 16-40）
-用 NestJS + PostgreSQL + Redis 构建，覆盖后端核心技能。**Day 16-30 已完成并封版 v1.0**（`solutions/blog/`：`blog-db` 裸 SQL、`blog-prisma` Prisma playground、`blog-api` 生产级 API，含分页/搜索/并发控制/Swagger 文档）；Day 31-40 的认证、缓存、队列待补。
+用 NestJS + PostgreSQL + Redis 构建，覆盖后端核心技能。**Day 16-40 已全部完成，封版到 v2.0**（`solutions/blog/`：`blog-db` 裸 SQL、`blog-prisma` Prisma playground、`blog-api` 生产级 API，含分页/搜索/并发控制/Swagger 文档，并接入 JWT/RBAC/OAuth 认证、Redis 缓存、消息队列与文件上传）。
 
 ### 3. 🔴 SaaS 任务管理平台（Day 46-55）
 全栈项目，用 Next.js + NestJS/tRPC + PostgreSQL + Redis + Docker 构建，作为阶段性综合实战目标。
@@ -261,7 +261,7 @@ cd days/day-01
 │   ├── blog/                   # 博客系统（Day 16-30）
 │   │   ├── blog-db/            # 裸 SQL：Docker PG + migrations + 练习
 │   │   ├── blog-prisma/        # Prisma playground（Day 25-26）
-│   │   └── blog-api/           # 生产级 NestJS API（v1.0 + Day 32 JWT + Day 33 RBAC + Day 34 OAuth）
+│   │   └── blog-api/           # 生产级 NestJS API（v2.0：JWT/RBAC/OAuth + Redis 缓存 + 队列 + 文件上传）
 │   └── auth-basics/            # Day 31：手写 JWT + Session vs JWT 对比（零依赖）
 ├── cheatsheets/                # 速查手册
 │   ├── sql-cheatsheet.md
