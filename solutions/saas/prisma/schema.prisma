@@ -1,0 +1,274 @@
+// ============================================================================
+// saas schema —— Day 46：SaaS 任务管理平台 · 数据模型
+// ----------------------------------------------------------------------------
+// 这是「规划与架构设计」阶段的产出：在写业务代码（Day 47 脚手架）之前，先把
+// 数据模型钉死。这是一个**普通的、带团队协作的任务管理 SaaS**——不是企业级多租户：
+//   - 没有"每个租户互不可见"的隔离要求，也没有 orgId 冗余 + RLS 那套机器；
+//   - 数据归属走"所有权 + 团队成员身份"：项目属于某个工作区（团队），工作区有成员，
+//     成员按角色协作。能看见一个项目 = 你是它所在工作区的成员。
+//
+// 设计主轴（读这张表时带着它）：
+//   ① 工作区（Workspace）是协作单位：几个人组成一个团队，共享里面的项目。
+//   ② 账号（User）跨工作区：一个人可加入多个团队，在每个团队里角色不同（靠 Membership）。
+//   ③ 公开 ID 全用 UUID，不暴露自增序号、不可枚举（ADR-005）。
+//   ④ 内容实体软删除（deletedAt），账号/成员关系硬删除（ADR-004）。
+//
+// 命名约定沿用 blog-api：列名 snake_case 走 @map，表名走 @@map，
+// 时间戳 Timestamptz(3)（和 JS Date 毫秒精度对齐，游标分页不丢行）。
+// 标 ★ 的是值得记住的写法关键点。
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// 枚举
+// ----------------------------------------------------------------------------
+enum Role {
+  OWNER // 创建者，一个工作区至少一个，不可轻易移除
+  ADMIN // 可管成员/项目设置
+  MEMBER // 日常读写
+  VIEWER // 只读
+}
+
+enum TaskStatus {
+  BACKLOG
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  DONE
+  CANCELLED
+}
+
+enum TaskPriority {
+  NONE
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+// ----------------------------------------------------------------------------
+// 账号层
+// ----------------------------------------------------------------------------
+
+// User：真实的人。和「在哪个团队里干活」解耦——一个人可同时是 A 团队的 ADMIN、B 团队的 MEMBER。
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String   @unique @db.VarChar(255)
+  name      String?  @db.VarChar(100)
+  passwordHash String? @map("password_hash") @db.VarChar(255) // ★ 只存哈希；OAuth 用户为 null
+  avatarUrl String?  @map("avatar_url") @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  memberships     Membership[]
+  assignedTasks   Task[]    @relation("TaskAssignee")
+  reportedTasks   Task[]    @relation("TaskReporter")
+  authoredComments Comment[]
+  invitationsSent Invitation[]
+
+  @@map("users")
+}
+
+// ----------------------------------------------------------------------------
+// 工作区（团队）层
+// ----------------------------------------------------------------------------
+
+// Workspace：协作单位。几个用户组成一个团队，共享里面的项目。
+// 这是「团队/组织」的概念（Day 48 会做它的 CRUD + 邀请 + RBAC），
+// 但它**不是**多租户隔离的"客户边界"——就是一个普通的协作分组。
+model Workspace {
+  id    String @id @default(uuid()) @db.Uuid
+  // ★ slug 全局唯一，进 URL：acme.taskapp.dev。一旦分配不建议改（外链会断）。
+  slug  String @unique @db.VarChar(40)
+  name  String @db.VarChar(100)
+  avatarUrl String? @map("avatar_url") @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  memberships Membership[]
+  projects    Project[]
+  labels      Label[]
+  invitations Invitation[]
+
+  @@map("workspaces")
+}
+
+// Membership：User × Workspace 的连接表，同时是 RBAC 角色的载体。
+// 权限不在 User 上（一个人在不同团队权限不同），而在「这个人 在 这个团队」这条关系上。
+model Membership {
+  id      String   @id @default(uuid()) @db.Uuid
+  userId  String   @map("user_id") @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  role    Role     @default(MEMBER)
+  joinedAt DateTime @default(now()) @map("joined_at") @db.Timestamptz(3)
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  // ★ (userId, workspaceId) 唯一：一个人在一个团队里只能有一条成员关系、一个角色。
+  @@unique([userId, workspaceId])
+  @@index([workspaceId]) // 列团队成员、判断「这人是不是这个团队的」都走它
+  @@map("memberships")
+}
+
+// Invitation：待接受的邀请。用一次性 token（而非直接建 Membership），让被邀请者显式接受。
+model Invitation {
+  id        String   @id @default(uuid()) @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  email     String   @db.VarChar(255) // 邀请到邮箱，不预设是哪个 user
+  role      Role     @default(MEMBER)
+  // ★ 邀请 token：高熵随机串，单次使用、带过期。邮件里带的就是它，凭它换 membership。
+  token     String   @unique @db.VarChar(64)
+  invitedById String @map("invited_by_id") @db.Uuid
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  acceptedAt DateTime? @map("accepted_at") @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy User      @relation(fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, email])
+  @@map("invitations")
+}
+
+// ----------------------------------------------------------------------------
+// 业务层
+// ----------------------------------------------------------------------------
+
+// Project：工作区内的项目，承载任务编号前缀（如 ENG-42 的 "ENG"）。
+model Project {
+  id          String @id @default(uuid()) @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  // ★ key 工作区内唯一，当任务编号前缀：ENG-1, ENG-2…。小写字母+数字，3~6 位。
+  key         String @db.VarChar(6)
+  name        String @db.VarChar(100)
+  description String? @db.Text
+  icon        String? @db.VarChar(20) // emoji 或图标名
+  archivedAt  DateTime? @map("archived_at") @db.Timestamptz(3) // 归档（软停用：仍在列表里，但默认不活跃）
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3)  // 软删除（回收站：列表默认 WHERE deleted_at IS NULL，可恢复；ADR-004）
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  tasks     Task[]
+  taskCounter ProjectTaskCounter? // ★ 取号器：每项目一行，见 ProjectTaskCounter / ADR-005
+
+  @@unique([workspaceId, key]) // ★ 同工作区内 key 不能撞
+  @@index([workspaceId])
+  @@map("projects")
+}
+
+// ProjectTaskCounter：任务编号的取号器（ADR-005）。每项目恰好一行，
+//   建卡事务里 UPDATE ... SET next_number = next_number + 1 RETURNING next_number
+//   拿到号再 INSERT task——行锁串行化同项目的并发建卡，号连续不撞、且不回收。
+//   单独建表（而非在 Project 上加计数器字段），是为了把「频繁更新的取号行」
+//   和「读多写少的项目元数据」的行锁竞争隔开。
+model ProjectTaskCounter {
+  projectId  String @id @map("project_id") @db.Uuid
+  nextNumber Int    @default(1) @map("next_number")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("project_task_counters")
+}
+
+// Task：核心实体。属于某个项目（进而属于项目所在的工作区）。
+// 可见性 = 「你是这个项目所在工作区的成员」，由应用层鉴权判断，不在数据层做隔离。
+model Task {
+  id        String @id @default(uuid()) @db.Uuid
+  projectId String @map("project_id") @db.Uuid
+
+  // ★ 项目内自增编号（不是全局）。显示成 "ENG-42"，对人友好、好口头引用。
+  //   生成姿势见 ADR-005：每项目一行计数器 + 行锁，事务内取号，避免并发撞号。
+  number Int
+
+  title       String @db.VarChar(200)
+  description String? @db.Text
+  status      TaskStatus @default(BACKLOG)
+  priority    TaskPriority @default(NONE)
+
+  assigneeId String? @map("assignee_id") @db.Uuid
+  reporterId String? @map("reporter_id") @db.Uuid
+  dueDate    DateTime? @map("due_date") @db.Timestamptz(3)
+
+  // ★ 看板内的排序权重。用 Float 而非 Int：拖动时取相邻两卡 order 的中值即可重排，
+  //   不必批量重编号。MVP 够用；精度耗尽（约 50+ 次连续中值后）的升级路是
+  //   lexicographic rank（分数式索引，Linear/Notion 的做法），留到后面。
+  order Float @default(0)
+
+  // ★ 乐观锁：并发改同一张卡（两人同时拖拽/改字段）时，带 expectedVersion 检测冲突。
+  version Int @default(1)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  // ★ 软删除：任务可恢复（撤销删除）。deletedAt 非空 = 已删，列表查询默认带 WHERE deleted_at IS NULL。
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignee  User?   @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  reporter  User?   @relation("TaskReporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  comments  Comment[]
+  labels    TaskLabel[]
+
+  // ★ 看板视图最热的查询 = 某项目某状态下的卡按 order 排，给它专门一条联合索引。
+  @@unique([projectId, number]) // "ENG-42" 在项目内唯一
+  @@index([projectId, status, order]) // 看板视图主查询
+  @@index([assigneeId, status]) // 「分给我的」视图
+  @@index([createdAt]) // 列表/时间线
+  @@map("tasks")
+}
+
+// Comment：任务评论。
+model Comment {
+  id       String @id @default(uuid()) @db.Uuid
+  taskId   String @map("task_id") @db.Uuid
+  authorId String @map("author_id") @db.Uuid
+  body     String @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt]) // 任务详情页拉评论，按时间正序
+  @@map("comments")
+}
+
+// Label：工作区级标签（一个工作区的标签全项目共享）。color 存 hex。
+model Label {
+  id          String @id @default(uuid()) @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  name        String @db.VarChar(40)
+  color       String @default("#6b7280") @db.VarChar(7)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  tasks     TaskLabel[]
+
+  @@unique([workspaceId, name]) // 工作区内标签名不撞
+  @@map("labels")
+}
+
+// TaskLabel：Task × Label 的多对多。显式建表——将来要在连接行上挂元数据
+// （如打标时间、打标人），显式表扩展性好。
+model TaskLabel {
+  taskId  String @map("task_id") @db.Uuid
+  labelId String @map("label_id") @db.Uuid
+
+  task  Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  label Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, labelId]) // 复合主键，天然防重复打标
+  @@map("task_labels")
+}
