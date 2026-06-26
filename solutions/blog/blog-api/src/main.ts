@@ -8,12 +8,23 @@ import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { AppModule } from './app.module';
 import type { AppConfig } from './config/configuration';
+import { initSentry } from './observability/sentry';
 
 // main.ts 只做装配：bootstrap、CORS、shutdown hooks、Swagger、listen
 // 任何业务代码出现在这里都是异味
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const config = app.get(ConfigService<AppConfig, true>);
+
+  // Day 45：Sentry 错误上报初始化（无 DSN 则 no-op）。放在拿到 config 之后、listen 之前。
+  // 越早 init 越好——这样 bootstrap 早期抛的异常也能被 capture（虽然这里已经在 create 之后，
+  // 但 create 本身失败属于配置/编译问题，不是 Sentry 该兜的运行时错误）。
+  initSentry({
+    dsn: config.get('observability.sentry.dsn', { infer: true }),
+    environment: config.get('observability.sentry.environment', { infer: true }),
+    tracesSampleRate: config.get('observability.sentry.tracesSampleRate', { infer: true }),
+    release: config.get('observability.sentry.release', { infer: true }),
+  });
 
   app.enableCors({
     origin: config.get('cors.origin', { infer: true }),

@@ -42,6 +42,7 @@
     "@nestjs/terminus": "^10.3.0",
     "@nestjs/throttler": "^6.5.0",
     "@prisma/client": "^5.22.0",
+    "@sentry/node": "^10.61.0",
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.79.0",
     "class-transformer": "^0.5.1",
@@ -49,6 +50,7 @@
     "helmet": "^8.2.0",
     "ioredis": "^5.11.1",
     "multer": "^1.4.4",
+    "pino": "^10.3.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "sharp": "^0.33.5",
@@ -60,6 +62,7 @@
     "@types/express": "^4.17.21",
     "@types/multer": "^1.4.13",
     "@types/node": "^20.14.0",
+    "pino-pretty": "^11.3.0",
     "prisma": "^5.22.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.0"

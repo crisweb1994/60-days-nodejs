@@ -89,6 +89,20 @@ export default function configuration(env: Env) {
       defaultLimit: env.PAGE_LIMIT,
       maxLimit: 100,
     },
+    // Day 45：可观测性。日志级别喂给 pino；Sentry 是「可选观测层」——和 Redis/队列同一哲学：
+    //   没配 DSN 时整个错误上报静默 no-op，绝不让它连累主流程（上报是入队异步，本来就不该抛错）。
+    //   tracesSampleRate 默认 0：性能 trace 每次请求都采样开销大，教学项目默认关，需要时再开。
+    log: {
+      level: env.LOG_LEVEL,
+    },
+    observability: {
+      sentry: {
+        dsn: env.SENTRY_DSN,
+        environment: env.SENTRY_ENVIRONMENT ?? env.NODE_ENV,
+        tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE,
+        release: env.SENTRY_RELEASE,
+      },
+    },
   };
 }
 

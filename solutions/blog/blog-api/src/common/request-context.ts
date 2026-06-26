@@ -24,6 +24,9 @@ export type CacheState = 'HIT' | 'MISS' | 'BYPASS';
 interface RequestContext {
   cache?: CacheState;
   cacheKey?: string;
+  // Day 45：请求级 requestId。和 cache 一样存在 CLS 里——这样「看不到 req 的深层代码」
+  // （service / 定时任务回调）也能凭 CLS 把日志关联到当前请求。pino 的 mixin 正是读它。
+  requestId?: string;
 }
 
 export const requestContextStorage = new AsyncLocalStorage<RequestContext>();
@@ -39,4 +42,11 @@ export function setCacheState(state: CacheState, key?: string): void {
   if (!store) return; // 没有请求上下文（比如单元测试直接调 service）——直接忽略，不影响业务
   store.cache = state;
   if (key) store.cacheKey = key;
+}
+
+/** Day 45：把当前请求的 requestId 写进 CLS（由 RequestIdMiddleware 调用）。 */
+export function setRequestId(requestId: string): void {
+  const store = requestContextStorage.getStore();
+  if (!store) return; // 没有请求上下文——忽略（和 setCacheState 同样的降级哲学）
+  store.requestId = requestId;
 }

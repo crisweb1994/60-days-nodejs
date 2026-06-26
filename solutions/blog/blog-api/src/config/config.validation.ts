@@ -92,6 +92,16 @@ export const envSchema = z.object({
   LOGIN_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(5), // 连续失败几次后锁定该账号
   LOGIN_LOCK_MINUTES: z.coerce.number().int().min(1).default(15), // 锁定持续分钟数（到点自动解锁）
   HTTP_BODY_LIMIT_KB: z.coerce.number().int().min(1).default(100), // JSON 请求体硬上限（KB）——挡大 payload DoS
+
+  // Day 45：可观测性。日志级别（pino）+ Sentry 错误上报（可选层，和 Redis/队列同一哲学）。
+  // LOG_LEVEL 写错会在启动校验时崩（fail-fast）；SENTRY_DSN 留空 = 不启用，capture 静默 no-op。
+  LOG_LEVEL: z
+    .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
+    .default('info'),
+  SENTRY_DSN: z.string().optional(), // 不填 = 不上报（开发期常见）；填了才 initSentry
+  SENTRY_ENVIRONMENT: z.string().optional(), // 不填回退 NODE_ENV，便于在 Sentry 按环境分组
+  SENTRY_RELEASE: z.string().optional(), // 版本号（如 git sha）；填了才能在 Sentry 按「引入版本」聚合错误
+  SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0), // 性能采样率 0~1；0=关闭 trace（默认省开销）
 }).superRefine((env, ctx) => {
   // 生产环境拒绝使用 .env.example 的示例 secret——占位值上线 = 谁都能伪造 token
   if (env.NODE_ENV === 'production' && env.JWT_ACCESS_SECRET === EXAMPLE_JWT_SECRET) {

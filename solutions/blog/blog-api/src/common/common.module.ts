@@ -13,6 +13,7 @@ import type { ValidationError } from 'class-validator';
 import { ErrorCodes } from './constants/error-codes';
 import { AllExceptionsFilter } from './filters/all-exceptions.filter';
 import { CacheHeaderInterceptor } from './interceptors/cache-header.interceptor';
+import { ObservabilityModule } from '../observability/observability.module';
 import { TimingInterceptor } from './interceptors/timing.interceptor';
 import { TransformInterceptor } from './interceptors/transform.interceptor';
 import { HttpLoggerMiddleware } from './middleware/http-logger.middleware';
@@ -42,6 +43,10 @@ function flattenErrors(errors: ValidationError[], parentPath = ''): FieldError[]
 // 业务 service 仍应通过普通 imports/exports 显式声明依赖。
 @Global()
 @Module({
+  // Day 45：APP_FILTER / APP_INTERCEPTOR 实例化时要在 CommonModule 自己的上下文里解析依赖。
+  // 观测层（StructuredLoggerService / ErrorReporter）虽是 @Global，但显式 import 进来更稳——
+  // 过滤器 / 拦截器构造时一定能拿到它们，不依赖全局可见性的初始化顺序。
+  imports: [ObservabilityModule],
   providers: [
     // 注册顺序就是执行顺序：Timing 在最外层，能测到全链路耗时
     // 写反（Timing 在内层）会让统计值偏小

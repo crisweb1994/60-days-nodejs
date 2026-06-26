@@ -2,18 +2,19 @@ import {
   CallHandler,
   ExecutionContext,
   Injectable,
-  Logger,
   NestInterceptor,
 } from '@nestjs/common';
 import { Observable, tap } from 'rxjs';
 import type { Request } from 'express';
+import { StructuredLoggerService } from '../../observability/structured-logger.service';
 
 // 慢请求探测。注册顺序决定它在最外层 —— 测到的耗时覆盖其它 interceptor + handler
 // 注册顺序写反（这个排在 TransformInterceptor 内层）会让统计值偏小
 @Injectable()
 export class TimingInterceptor implements NestInterceptor {
-  private readonly logger = new Logger('Timing');
   private readonly slowMs = 500;
+
+  constructor(private readonly logger: StructuredLoggerService) {}
 
   intercept(ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
     const start = Date.now();
@@ -28,8 +29,16 @@ export class TimingInterceptor implements NestInterceptor {
 
   private report(req: Request, ms: number): void {
     if (ms >= this.slowMs) {
-      const reqId = req.headers['x-request-id'] as string | undefined;
-      this.logger.warn(`SLOW ${req.method} ${req.originalUrl} ${ms}ms reqId=${reqId ?? '-'}`);
+      // 字段式 SLO 告警：采集后能按 url 聚合「慢请求 TOP」，而不是在散文日志里捞数字。
+      this.logger.warn(
+        {
+          method: req.method,
+          url: req.originalUrl,
+          durationMs: ms,
+          requestId: req.headers['x-request-id'] ?? undefined,
+        },
+        'slow request',
+      );
     }
   }
 }

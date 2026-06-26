@@ -10,6 +10,7 @@ import configuration from './config/configuration';
 import { validateEnv } from './config/config.validation';
 import type { AppConfig } from './config/configuration';
 import { HealthModule } from './health/health.module';
+import { ObservabilityModule } from './observability/observability.module';
 import { PostsModule } from './posts/posts.module';
 import { QueueModule } from './queue/queue.module';
 import { StorageModule } from './storage/storage.module';
@@ -44,6 +45,8 @@ import { StorageModule } from './storage/storage.module';
     QueueModule,
     // Day 39：文件上传与存储。@Global 模块，任何模块都能注入 STORAGE_SERVICE / ImageProcessorService。
     StorageModule,
+    // Day 45：可观测性。@Global 模块，提供 StructuredLoggerService（结构化日志）+ ErrorReporter（Sentry 上报）。
+    ObservabilityModule,
     HealthModule,
     AuthModule, // Day 32：注册 / 登录 / JWT
     PostsModule,

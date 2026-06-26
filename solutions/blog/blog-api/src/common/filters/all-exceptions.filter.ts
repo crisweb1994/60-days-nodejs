@@ -4,18 +4,23 @@ import {
   ExceptionFilter,
   HttpException,
   HttpStatus,
-  Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ErrorCodes } from '../constants/error-codes';
+import { StructuredLoggerService } from '../../observability/structured-logger.service';
+import { ErrorReporter } from '../../observability/error-reporter';
 
 // 兜底过滤器：@Catch() 不传参 → 接所有异常
 // 处理策略：
 //   - HttpException：业务/客户端预期错误，透传 message + 业务 code
-//   - 未知异常：服务端 bug，打栈 + 脱敏文案，绝不把 error.message 漏给客户端
+//   - 未知异常：服务端 bug，结构化打栈（err 字段交 pino serializer）+ 推 Sentry，绝不把 error.message 漏给客户端
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
-  private readonly logger = new Logger('Exception');
+  constructor(
+    private readonly logger: StructuredLoggerService,
+    // 注入抽象 token：生产是 SentryErrorReporter，测试塞个假实现断言「确实 capture 了」。
+    private readonly reporter: ErrorReporter,
+  ) {}
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
@@ -48,28 +53,38 @@ export class AllExceptionsFilter implements ExceptionFilter {
       payload.message = '请求体过大，请减小提交内容';
     }
 
-    // 5xx 是服务端责任，必须能复盘；4xx 是客户端责任，量大时不打
-    if (!isHttp && status >= 500) {
-      this.logger.error(
-        `${req.method} ${req.url} → ${status}`,
-        exception instanceof Error ? exception.stack : String(exception),
-      );
-    } else if (status >= 500) {
-      this.logger.error(`${req.method} ${req.url} → ${status}`, JSON.stringify(payload));
-    }
-
     const requestId = req.headers['x-request-id'] as string | undefined;
+    const context = {
+      method: req.method,
+      url: req.url,
+      status,
+      requestId,
+      code: payload.code,
+    };
+
+    // Day 45：结构化错误日志。err 字段名固定为 'err'——pino 默认对它跑 stdSerializers.err，
+    // 把异常序列化成 { message, stack, type }，栈就自动进日志了。
+    if (status >= 500) {
+      this.logger.error(
+        { ...context, err: exception },
+        isHttp ? 'http exception' : 'unhandled exception',
+      );
+      // ★ 5xx 是服务端 bug，推一份到 Sentry 供复盘。
+      //   4xx 是客户端责任（量大），不上报——否则告警噪音淹没真问题。业务 4xx 由 BusinessExceptionFilter 另记。
+      this.reporter.capture(exception, context);
+    }
+    // 4xx 不在这里打日志（和原版一致：量大、客户端责任）。
 
     // 失败响应 = 成功响应外壳的镜像，前端用同一套类型解
     res.status(status).json({
-      code: payload.code ?? status,        // 业务码优先，回落到 HTTP 码
+      code: payload.code ?? status, // 业务码优先，回落到 HTTP 码
       data: null,
       message: isHttp
         ? Array.isArray(payload.message)
           ? payload.message.join('; ')
           : payload.message ?? 'Request failed'
-        : '服务器内部错误',                // 未知异常永远用固定文案
-      errors: payload.errors,              // 校验明细（来自 day-18 的 exceptionFactory）
+        : '服务器内部错误', // 未知异常永远用固定文案，绝不漏 exception.message
+      errors: payload.errors, // 校验明细（来自 day-18 的 exceptionFactory）
       path: req.url,
       requestId,
       timestamp: new Date().toISOString(),
