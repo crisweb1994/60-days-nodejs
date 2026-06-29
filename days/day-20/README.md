@@ -162,7 +162,7 @@ export class PostsService {
 
 ```typescript
 // config/configuration.ts
-export default () => ({
+const configuration = () => ({
   port: parseInt(process.env.PORT ?? '3000', 10),
   env: process.env.NODE_ENV ?? 'development',
   cors: {
@@ -173,6 +173,8 @@ export default () => ({
     maxLimit: 100,
   },
 });
+
+export default configuration;
 
 export type AppConfig = ReturnType<typeof configuration>;
 ```
