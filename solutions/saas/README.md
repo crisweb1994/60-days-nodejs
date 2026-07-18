@@ -1,10 +1,10 @@
-# SaaS 任务管理平台 — Day 49 项目与任务
+# SaaS 任务管理平台 — Day 50 看板与列表视图
 
 这是 Day 46 起的 **SaaS 任务管理平台** 弧线配套代码目录。Day 46 这里只有设计产出；Day 47 开始，它变成一个可以启动的 Next.js + tRPC + Prisma 工程。
 
 这仍然是一个**普通的协作型 SaaS**，不是企业级多租户：用户注册，建工作区，邀请成员，在项目里管理任务。数据归属沿用 Day 46 的设计：`Task -> Project -> Workspace`，能看见 = 你是工作区成员。
 
-Day 48 补上用户与团队；Day 49 补上第一块核心业务：项目 CRUD、任务 CRUD、项目内任务编号、状态流转、标签、指派、评论和软删除。
+Day 48 补上用户与团队；Day 49 补上项目和任务核心业务；Day 50 补上看板读模型、列表筛选分页和拖拽排序后端支持。
 
 ## 当前包含
 
@@ -21,7 +21,7 @@ solutions/saas/
 │       ├── db.ts                     # Prisma Client 单例
 │       ├── trpc.ts                   # tRPC 初始化
 │       ├── auth/                     # 密码、session、RBAC
-│       ├── domain/                   # 领域规则（任务状态机）
+│       ├── domain/                   # 领域规则（状态机、游标）
 │       └── routers/
 │           ├── _app.ts               # 根 router
 │           ├── auth.ts               # 注册/登录/me/logout
@@ -101,7 +101,23 @@ curl -i -c /tmp/saas-cookie.txt \
   --data '{"json":{"email":"owner@example.com","password":"password123","name":"Owner"}}'
 ```
 
-## Day 49 API 快速试跑
+创建工作区：
+
+```bash
+curl -b /tmp/saas-cookie.txt \
+  -X POST "http://localhost:3000/api/trpc/workspaces.create" \
+  -H "content-type: application/json" \
+  --data '{"json":{"name":"Acme Team","slug":"acme-team"}}'
+```
+
+查看当前用户：
+
+```bash
+curl -b /tmp/saas-cookie.txt \
+  "http://localhost:3000/api/trpc/auth.me"
+```
+
+## Day 49/50 API 快速试跑
 
 创建项目：
 
@@ -130,29 +146,27 @@ curl -b /tmp/saas-cookie.txt \
   --data '{"json":{"workspaceSlug":"acme-team","projectKey":"ENG","number":1,"expectedVersion":1,"status":"TODO"}}'
 ```
 
-查看当前用户：
+读取看板：
 
 ```bash
-curl -b /tmp/saas-cookie.txt \
-  "http://localhost:3000/api/trpc/auth.me"
+curl -g -b /tmp/saas-cookie.txt \
+  "http://localhost:3000/api/trpc/tasks.board?input={\"json\":{\"workspaceSlug\":\"acme-team\",\"projectKey\":\"ENG\"}}"
 ```
 
-创建工作区：
+读取列表视图：
 
 ```bash
-curl -b /tmp/saas-cookie.txt \
-  -X POST "http://localhost:3000/api/trpc/workspaces.create" \
-  -H "content-type: application/json" \
-  --data '{"json":{"name":"Acme Team","slug":"acme-team"}}'
+curl -g -b /tmp/saas-cookie.txt \
+  "http://localhost:3000/api/trpc/tasks.listView?input={\"json\":{\"workspaceSlug\":\"acme-team\",\"projectKey\":\"ENG\",\"limit\":20,\"sortField\":\"updatedAt\",\"sortDirection\":\"desc\"}}"
 ```
 
-邀请成员：
+拖拽排序 / 跨列移动：
 
 ```bash
 curl -b /tmp/saas-cookie.txt \
-  -X POST "http://localhost:3000/api/trpc/workspaces.invite" \
+  -X POST "http://localhost:3000/api/trpc/tasks.reorder" \
   -H "content-type: application/json" \
-  --data '{"json":{"slug":"acme-team","email":"member@example.com","role":"MEMBER"}}'
+  --data '{"json":{"workspaceSlug":"acme-team","projectKey":"ENG","number":1,"expectedVersion":1,"status":"TODO"}}'
 ```
 
 ## 设计文档阅读顺序
@@ -164,4 +178,4 @@ curl -b /tmp/saas-cookie.txt \
 
 ## 当前边界
 
-OAuth 还没有接真实 Provider；邀请 token 现在直接从 API 返回，方便本地练习，生产里应该通过邮件发送。Day 49 还没有前端看板页面，接口和领域规则已经可用；拖拽排序、搜索和通知从后续天继续补。
+OAuth 还没有接真实 Provider；邀请 token 现在直接从 API 返回，方便本地练习，生产里应该通过邮件发送。Day 50 还没有前端看板页面，也没有实时同步；接口、筛选分页和拖拽排序后端已经可用。

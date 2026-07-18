@@ -10,6 +10,7 @@ import {
   allowedTaskStatusTransitions,
   canTransitionTaskStatus,
 } from "@/server/domain/task-status";
+import { decodeCursor, encodeCursor } from "@/server/domain/cursor";
 import { projectKeySchema } from "@/server/routers/projects";
 import { protectedProcedure, router } from "@/server/trpc";
 
@@ -19,6 +20,32 @@ const taskPrioritySchema = z.nativeEnum(TaskPriority);
 const labelColorSchema = z
   .string()
   .regex(/^#[0-9a-fA-F]{6}$/, "Label color must be a hex color");
+const listSortFieldSchema = z.enum(["createdAt", "updatedAt", "number"]);
+const sortDirectionSchema = z.enum(["asc", "desc"]);
+const listLimitSchema = z.number().int().min(1).max(100).default(30);
+
+function calculateOrder(beforeOrder?: number, afterOrder?: number): number {
+  if (beforeOrder !== undefined && afterOrder !== undefined) {
+    if (beforeOrder >= afterOrder) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "beforeNumber must come before afterNumber",
+      });
+    }
+
+    return (beforeOrder + afterOrder) / 2;
+  }
+
+  if (beforeOrder !== undefined) {
+    return beforeOrder + 1000;
+  }
+
+  if (afterOrder !== undefined) {
+    return afterOrder - 1000;
+  }
+
+  return 1000;
+}
 
 async function requireProject(
   prisma: Parameters<typeof requireMembership>[0],
@@ -104,6 +131,191 @@ async function assertWorkspaceUser(
 }
 
 export const tasksRouter = router({
+  board: protectedProcedure
+    .input(
+      z.object({
+        workspaceSlug: workspaceSlugSchema,
+        projectKey: projectKeySchema,
+        assigneeId: z.string().uuid().optional(),
+        priority: taskPrioritySchema.optional(),
+        labelName: z.string().trim().min(1).max(40).optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const { workspace } = await requireMembership(
+        ctx.prisma,
+        ctx.user.id,
+        input.workspaceSlug,
+      );
+      const project = await requireProject(ctx.prisma, workspace.id, input.projectKey);
+      const baseWhere = {
+        projectId: project.id,
+        deletedAt: null,
+        assigneeId: input.assigneeId,
+        priority: input.priority,
+        labels: input.labelName
+          ? { some: { label: { name: input.labelName } } }
+          : undefined,
+      };
+
+      const tasks = await ctx.prisma.task.findMany({
+        where: baseWhere,
+        orderBy: [{ status: "asc" }, { order: "asc" }, { createdAt: "asc" }],
+        select: {
+          id: true,
+          number: true,
+          title: true,
+          status: true,
+          priority: true,
+          assignee: {
+            select: { id: true, email: true, name: true, avatarUrl: true },
+          },
+          dueDate: true,
+          order: true,
+          version: true,
+          labels: {
+            select: {
+              label: { select: { id: true, name: true, color: true } },
+            },
+          },
+        },
+      });
+
+      const countByStatus = new Map(
+        Object.values(TaskStatus).map((status) => [
+          status,
+          tasks.filter((task) => task.status === status).length,
+        ]),
+      );
+      const columns = Object.values(TaskStatus).map((status) => ({
+        status,
+        count: countByStatus.get(status) ?? 0,
+        tasks: tasks.filter((task) => task.status === status),
+      }));
+
+      return { project, columns };
+    }),
+
+  listView: protectedProcedure
+    .input(
+      z.object({
+        workspaceSlug: workspaceSlugSchema,
+        projectKey: projectKeySchema.optional(),
+        status: taskStatusSchema.optional(),
+        assigneeId: z.string().uuid().optional(),
+        priority: taskPrioritySchema.optional(),
+        labelName: z.string().trim().min(1).max(40).optional(),
+        q: z.string().trim().min(1).max(100).optional(),
+        sortField: listSortFieldSchema.default("updatedAt"),
+        sortDirection: sortDirectionSchema.default("desc"),
+        limit: listLimitSchema,
+        cursor: z.string().optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const { workspace } = await requireMembership(
+        ctx.prisma,
+        ctx.user.id,
+        input.workspaceSlug,
+      );
+      let cursor = null;
+      try {
+        cursor = input.cursor ? decodeCursor(input.cursor) : null;
+      } catch {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Invalid cursor",
+        });
+      }
+      const sortValue = cursor?.value;
+      const sortField = input.sortField;
+      const sortDirection = input.sortDirection;
+      const cursorWhere =
+        cursor && sortValue !== undefined
+          ? {
+              OR:
+                sortDirection === "desc"
+                  ? [
+                      { [sortField]: { lt: sortValue } },
+                      { [sortField]: sortValue, id: { lt: cursor.id } },
+                    ]
+                  : [
+                      { [sortField]: { gt: sortValue } },
+                      { [sortField]: sortValue, id: { gt: cursor.id } },
+                    ],
+            }
+          : undefined;
+
+      const tasks = await ctx.prisma.task.findMany({
+        where: {
+          deletedAt: null,
+          status: input.status,
+          assigneeId: input.assigneeId,
+          priority: input.priority,
+          project: {
+            workspaceId: workspace.id,
+            deletedAt: null,
+            key: input.projectKey,
+          },
+          labels: input.labelName
+            ? { some: { label: { name: input.labelName } } }
+            : undefined,
+          OR: input.q
+            ? [
+                { title: { contains: input.q, mode: "insensitive" } },
+                { description: { contains: input.q, mode: "insensitive" } },
+              ]
+            : undefined,
+          AND: cursorWhere,
+        },
+        orderBy: [{ [sortField]: sortDirection }, { id: sortDirection }],
+        take: input.limit + 1,
+        select: {
+          id: true,
+          number: true,
+          title: true,
+          description: true,
+          status: true,
+          priority: true,
+          assignee: {
+            select: { id: true, email: true, name: true, avatarUrl: true },
+          },
+          dueDate: true,
+          order: true,
+          version: true,
+          createdAt: true,
+          updatedAt: true,
+          project: {
+            select: { id: true, key: true, name: true },
+          },
+          labels: {
+            select: {
+              label: { select: { id: true, name: true, color: true } },
+            },
+          },
+        },
+      });
+
+      const hasMore = tasks.length > input.limit;
+      const page = hasMore ? tasks.slice(0, input.limit) : tasks;
+      const last = page.at(-1);
+      const nextCursor = last
+        ? encodeCursor({
+            value:
+              sortField === "number"
+                ? last.number
+                : last[sortField].toISOString(),
+            id: last.id,
+          })
+        : null;
+
+      return {
+        tasks: page,
+        nextCursor: hasMore ? nextCursor : null,
+        hasMore,
+      };
+    }),
+
   list: protectedProcedure
     .input(
       z.object({
@@ -443,6 +655,130 @@ export const tasksRouter = router({
         task: updated,
         nextStatuses: allowedTaskStatusTransitions(updated.status),
       };
+    }),
+
+  reorder: protectedProcedure
+    .input(
+      z.object({
+        workspaceSlug: workspaceSlugSchema,
+        projectKey: projectKeySchema,
+        number: z.number().int().positive(),
+        expectedVersion: z.number().int().positive(),
+        status: taskStatusSchema,
+        beforeNumber: z.number().int().positive().nullable().optional(),
+        afterNumber: z.number().int().positive().nullable().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (
+        input.beforeNumber != null &&
+        input.afterNumber != null &&
+        input.beforeNumber === input.afterNumber
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "beforeNumber and afterNumber cannot be the same task",
+        });
+      }
+
+      if (input.number === input.beforeNumber || input.number === input.afterNumber) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "A task cannot be ordered relative to itself",
+        });
+      }
+
+      const { workspace } = await requireMembership(
+        ctx.prisma,
+        ctx.user.id,
+        input.workspaceSlug,
+        Role.MEMBER,
+      );
+      const project = await requireProject(ctx.prisma, workspace.id, input.projectKey);
+      const task = await requireTask(ctx.prisma, project.id, input.number);
+      if (task.version !== input.expectedVersion) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Task was updated by someone else",
+        });
+      }
+
+      if (!canTransitionTaskStatus(task.status, input.status)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Cannot move task from ${task.status} to ${input.status}`,
+        });
+      }
+
+      const [beforeTask, afterTask] = await Promise.all([
+        input.beforeNumber
+          ? ctx.prisma.task.findFirst({
+              where: {
+                projectId: project.id,
+                number: input.beforeNumber,
+                status: input.status,
+                deletedAt: null,
+              },
+              select: { order: true },
+            })
+          : Promise.resolve(null),
+        input.afterNumber
+          ? ctx.prisma.task.findFirst({
+              where: {
+                projectId: project.id,
+                number: input.afterNumber,
+                status: input.status,
+                deletedAt: null,
+              },
+              select: { order: true },
+            })
+          : Promise.resolve(null),
+      ]);
+
+      if (input.beforeNumber && !beforeTask) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "beforeNumber must be in the target column",
+        });
+      }
+
+      if (input.afterNumber && !afterTask) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "afterNumber must be in the target column",
+        });
+      }
+
+      const order =
+        input.beforeNumber == null && input.afterNumber == null
+          ? ((await ctx.prisma.task.aggregate({
+              where: {
+                projectId: project.id,
+                status: input.status,
+                deletedAt: null,
+                id: { not: task.id },
+              },
+              _max: { order: true },
+            }))._max.order ?? 0) + 1000
+          : calculateOrder(beforeTask?.order, afterTask?.order);
+      const updated = await ctx.prisma.task.update({
+        where: { id: task.id },
+        data: {
+          status: input.status,
+          order,
+          version: { increment: 1 },
+        },
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          order: true,
+          version: true,
+          updatedAt: true,
+        },
+      });
+
+      return { task: updated };
     }),
 
   delete: protectedProcedure
