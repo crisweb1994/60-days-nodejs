@@ -55,6 +55,22 @@ function calculateOrder(beforeOrder?: number, afterOrder?: number): number {
   return 1000;
 }
 
+function completedAtForStatusChange(
+  currentStatus: TaskStatus,
+  nextStatus: TaskStatus,
+): Date | null | undefined {
+  if (currentStatus === nextStatus) {
+    return undefined;
+  }
+  if (nextStatus === TaskStatus.DONE) {
+    return new Date();
+  }
+  if (currentStatus === TaskStatus.DONE) {
+    return null;
+  }
+  return undefined;
+}
+
 async function requireProject(
   prisma: Parameters<typeof requireMembership>[0],
   workspaceId: string,
@@ -99,6 +115,7 @@ async function requireTask(
       assigneeId: true,
       reporterId: true,
       dueDate: true,
+      completedAt: true,
       order: true,
       version: true,
       createdAt: true,
@@ -179,6 +196,7 @@ export const tasksRouter = router({
             select: { id: true, email: true, name: true, avatarUrl: true },
           },
           dueDate: true,
+          completedAt: true,
           order: true,
           version: true,
           labels: {
@@ -289,6 +307,7 @@ export const tasksRouter = router({
             select: { id: true, email: true, name: true, avatarUrl: true },
           },
           dueDate: true,
+          completedAt: true,
           order: true,
           version: true,
           createdAt: true,
@@ -361,6 +380,7 @@ export const tasksRouter = router({
           assigneeId: true,
           reporterId: true,
           dueDate: true,
+          completedAt: true,
           order: true,
           version: true,
           createdAt: true,
@@ -428,6 +448,8 @@ export const tasksRouter = router({
             assigneeId,
             reporterId: ctx.user.id,
             dueDate: input.dueDate,
+            completedAt:
+              input.status === TaskStatus.DONE ? new Date() : undefined,
             order: (maxOrder._max.order ?? 0) + 1000,
           },
           select: {
@@ -440,6 +462,7 @@ export const tasksRouter = router({
             assigneeId: true,
             reporterId: true,
             dueDate: true,
+            completedAt: true,
             order: true,
             version: true,
             createdAt: true,
@@ -540,6 +563,7 @@ export const tasksRouter = router({
             select: { id: true, email: true, name: true, avatarUrl: true },
           },
           dueDate: true,
+          completedAt: true,
           order: true,
           version: true,
           createdAt: true,
@@ -627,6 +651,7 @@ export const tasksRouter = router({
           priority: true,
           assigneeId: true,
           dueDate: true,
+          completedAt: true,
           order: true,
           version: true,
           updatedAt: true,
@@ -716,6 +741,7 @@ export const tasksRouter = router({
         where: { id: task.id },
         data: {
           status: input.status,
+          completedAt: completedAtForStatusChange(task.status, input.status),
           order: task.status === input.status ? task.order : (maxOrder._max.order ?? 0) + 1000,
           version: { increment: 1 },
         },
@@ -723,6 +749,7 @@ export const tasksRouter = router({
           id: true,
           number: true,
           status: true,
+          completedAt: true,
           order: true,
           version: true,
           updatedAt: true,
@@ -877,6 +904,7 @@ export const tasksRouter = router({
         where: { id: task.id },
         data: {
           status: input.status,
+          completedAt: completedAtForStatusChange(task.status, input.status),
           order,
           version: { increment: 1 },
         },
@@ -884,6 +912,7 @@ export const tasksRouter = router({
           id: true,
           number: true,
           status: true,
+          completedAt: true,
           order: true,
           version: true,
           updatedAt: true,

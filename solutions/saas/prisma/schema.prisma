@@ -216,9 +216,11 @@ model Task {
   status      TaskStatus   @default(BACKLOG)
   priority    TaskPriority @default(NONE)
 
-  assigneeId String?   @map("assignee_id") @db.Uuid
-  reporterId String?   @map("reporter_id") @db.Uuid
-  dueDate    DateTime? @map("due_date") @db.Timestamptz(3)
+  assigneeId  String?   @map("assignee_id") @db.Uuid
+  reporterId  String?   @map("reporter_id") @db.Uuid
+  dueDate     DateTime? @map("due_date") @db.Timestamptz(3)
+  // 完成时间是统计事实，不能拿 updatedAt 代替：完成后改标题不应改变完成趋势。
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(3)
 
   // ★ 看板内的排序权重。用 Float 而非 Int：拖动时取相邻两卡 order 的中值即可重排，
   //   不必批量重编号。MVP 够用；精度耗尽（约 50+ 次连续中值后）的升级路是
@@ -243,6 +245,8 @@ model Task {
   @@unique([projectId, number]) // "ENG-42" 在项目内唯一
   @@index([projectId, status, order]) // 看板视图主查询
   @@index([assigneeId, status]) // 「分给我的」视图
+  @@index([projectId, completedAt]) // 完成趋势按项目和时间范围扫描
+  @@index([projectId, dueDate]) // 逾期任务统计
   @@index([createdAt]) // 列表/时间线
   @@map("tasks")
 }
