@@ -1,10 +1,10 @@
-# SaaS 任务管理平台 — Day 50 看板与列表视图
+# SaaS 任务管理平台 — Day 51 实时通信
 
 这是 Day 46 起的 **SaaS 任务管理平台** 弧线配套代码目录。Day 46 这里只有设计产出；Day 47 开始，它变成一个可以启动的 Next.js + tRPC + Prisma 工程。
 
 这仍然是一个**普通的协作型 SaaS**，不是企业级多租户：用户注册，建工作区，邀请成员，在项目里管理任务。数据归属沿用 Day 46 的设计：`Task -> Project -> Workspace`，能看见 = 你是工作区成员。
 
-Day 48 补上用户与团队；Day 49 补上项目和任务核心业务；Day 50 补上看板读模型、列表筛选分页和拖拽排序后端支持。
+Day 48 补上用户与团队；Day 49 补上项目和任务核心业务；Day 50 补上看板读模型、列表筛选分页和拖拽排序后端支持；Day 51 增加 SSE 实时事件流，用来同步任务变更和在线用户。
 
 ## 当前包含
 
@@ -22,6 +22,7 @@ solutions/saas/
 │       ├── trpc.ts                   # tRPC 初始化
 │       ├── auth/                     # 密码、session、RBAC
 │       ├── domain/                   # 领域规则（状态机、游标）
+│       ├── realtime/                 # SSE 事件类型、事件总线、编码
 │       └── routers/
 │           ├── _app.ts               # 根 router
 │           ├── auth.ts               # 注册/登录/me/logout
@@ -29,6 +30,7 @@ solutions/saas/
 │           ├── projects.ts           # 项目 CRUD
 │           ├── tasks.ts              # 任务 CRUD/状态/标签/评论
 │           └── workspaces.ts         # 工作区/成员/邀请
+│   └── app/api/realtime/             # 工作区 SSE 订阅接口
 ├── prisma/
 │   └── schema.prisma                 # Day 46 数据模型
 ├── docs/                             # Day 46 架构设计与 ADR
@@ -169,6 +171,26 @@ curl -b /tmp/saas-cookie.txt \
   --data '{"json":{"workspaceSlug":"acme-team","projectKey":"ENG","number":1,"expectedVersion":1,"status":"TODO"}}'
 ```
 
+## Day 51 SSE 实时事件
+
+打开工作区事件流：
+
+```bash
+curl -N -b /tmp/saas-cookie.txt \
+  "http://localhost:3000/api/realtime/workspaces/acme-team/events"
+```
+
+另开终端创建任务：
+
+```bash
+curl -b /tmp/saas-cookie.txt \
+  -X POST "http://localhost:3000/api/trpc/tasks.create" \
+  -H "content-type: application/json" \
+  --data '{"json":{"workspaceSlug":"acme-team","projectKey":"ENG","title":"Realtime card"}}'
+```
+
+SSE 终端会收到 `task.created`。任务更新、拖拽、删除和评论也会发布对应事件。
+
 ## 设计文档阅读顺序
 
 1. `prisma/schema.prisma`：数据模型，重点看 `User / Workspace / Membership / Project / Task`
@@ -178,4 +200,4 @@ curl -b /tmp/saas-cookie.txt \
 
 ## 当前边界
 
-OAuth 还没有接真实 Provider；邀请 token 现在直接从 API 返回，方便本地练习，生产里应该通过邮件发送。Day 50 还没有前端看板页面，也没有实时同步；接口、筛选分页和拖拽排序后端已经可用。
+OAuth 还没有接真实 Provider；邀请 token 现在直接从 API 返回，方便本地练习，生产里应该通过邮件发送。Day 51 的实时事件总线是单实例内存版，适合本地开发和单实例部署；多实例需要 Redis Pub/Sub，离线可见通知留给 Day 52。

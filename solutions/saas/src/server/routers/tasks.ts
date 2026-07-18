@@ -12,6 +12,8 @@ import {
 } from "@/server/domain/task-status";
 import { decodeCursor, encodeCursor } from "@/server/domain/cursor";
 import { projectKeySchema } from "@/server/routers/projects";
+import { realtimeEventBus } from "@/server/realtime/event-bus";
+import { toRealtimeUser } from "@/server/realtime/events";
 import { protectedProcedure, router } from "@/server/trpc";
 
 const taskTitleSchema = z.string().trim().min(1).max(200);
@@ -466,6 +468,23 @@ export const tasksRouter = router({
         return createdTask;
       });
 
+      realtimeEventBus.publish(workspace.id, {
+        type: "task.created",
+        workspaceId: workspace.id,
+        actor: toRealtimeUser(ctx.user),
+        task: {
+          id: task.id,
+          number: task.number,
+          title: task.title,
+          status: task.status,
+          priority: task.priority,
+          order: task.order,
+          version: task.version,
+          projectKey: project.key,
+        },
+        at: new Date().toISOString(),
+      });
+
       return { task };
     }),
 
@@ -593,6 +612,23 @@ export const tasksRouter = router({
         },
       });
 
+      realtimeEventBus.publish(workspace.id, {
+        type: "task.updated",
+        workspaceId: workspace.id,
+        actor: toRealtimeUser(ctx.user),
+        task: {
+          id: updated.id,
+          number: updated.number,
+          title: updated.title,
+          status: updated.status,
+          priority: updated.priority,
+          order: updated.order,
+          version: updated.version,
+          projectKey: project.key,
+        },
+        at: new Date().toISOString(),
+      });
+
       return { task: updated };
     }),
 
@@ -649,6 +685,21 @@ export const tasksRouter = router({
           version: true,
           updatedAt: true,
         },
+      });
+
+      realtimeEventBus.publish(workspace.id, {
+        type: "task.moved",
+        workspaceId: workspace.id,
+        actor: toRealtimeUser(ctx.user),
+        task: {
+          id: updated.id,
+          number: updated.number,
+          status: updated.status,
+          order: updated.order,
+          version: updated.version,
+          projectKey: project.key,
+        },
+        at: new Date().toISOString(),
       });
 
       return {
@@ -778,6 +829,21 @@ export const tasksRouter = router({
         },
       });
 
+      realtimeEventBus.publish(workspace.id, {
+        type: "task.moved",
+        workspaceId: workspace.id,
+        actor: toRealtimeUser(ctx.user),
+        task: {
+          id: updated.id,
+          number: updated.number,
+          status: updated.status,
+          order: updated.order,
+          version: updated.version,
+          projectKey: project.key,
+        },
+        at: new Date().toISOString(),
+      });
+
       return { task: updated };
     }),
 
@@ -810,6 +876,23 @@ export const tasksRouter = router({
       await ctx.prisma.task.update({
         where: { id: task.id },
         data: { deletedAt: new Date(), version: { increment: 1 } },
+      });
+
+      realtimeEventBus.publish(workspace.id, {
+        type: "task.deleted",
+        workspaceId: workspace.id,
+        actor: toRealtimeUser(ctx.user),
+        task: {
+          id: task.id,
+          number: task.number,
+          title: task.title,
+          status: task.status,
+          priority: task.priority,
+          order: task.order,
+          version: task.version + 1,
+          projectKey: project.key,
+        },
+        at: new Date().toISOString(),
       });
 
       return { ok: true };
@@ -848,6 +931,27 @@ export const tasksRouter = router({
             select: { id: true, email: true, name: true, avatarUrl: true },
           },
         },
+      });
+
+      realtimeEventBus.publish(workspace.id, {
+        type: "comment.created",
+        workspaceId: workspace.id,
+        actor: toRealtimeUser(ctx.user),
+        task: {
+          id: task.id,
+          number: task.number,
+          title: task.title,
+          status: task.status,
+          priority: task.priority,
+          order: task.order,
+          version: task.version,
+          projectKey: project.key,
+        },
+        comment: {
+          id: comment.id,
+          body: comment.body,
+        },
+        at: new Date().toISOString(),
       });
 
       return { comment };
