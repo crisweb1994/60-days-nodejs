@@ -1,4 +1,9 @@
-import { Role, TaskPriority, TaskStatus } from "@prisma/client";
+import {
+  NotificationType,
+  Role,
+  TaskPriority,
+  TaskStatus,
+} from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
@@ -12,6 +17,7 @@ import {
 } from "@/server/domain/task-status";
 import { decodeCursor, encodeCursor } from "@/server/domain/cursor";
 import { projectKeySchema } from "@/server/routers/projects";
+import { notifyWithoutBreakingMutation } from "@/server/notifications/notification-service";
 import { realtimeEventBus } from "@/server/realtime/event-bus";
 import { toRealtimeUser } from "@/server/realtime/events";
 import { protectedProcedure, router } from "@/server/trpc";
@@ -485,6 +491,21 @@ export const tasksRouter = router({
         at: new Date().toISOString(),
       });
 
+      await notifyWithoutBreakingMutation({
+        prisma: ctx.prisma,
+        workspaceId: workspace.id,
+        actorId: ctx.user.id,
+        recipientIds: [task.assigneeId],
+        type: NotificationType.TASK_ASSIGNED,
+        title: `You were assigned ${project.key}-${task.number}`,
+        body: task.title,
+        data: {
+          taskId: task.id,
+          taskNumber: task.number,
+          projectKey: project.key,
+        },
+      });
+
       return { task };
     }),
 
@@ -629,6 +650,27 @@ export const tasksRouter = router({
         at: new Date().toISOString(),
       });
 
+      if (
+        input.assigneeId !== undefined &&
+        updated.assigneeId &&
+        updated.assigneeId !== task.assigneeId
+      ) {
+        await notifyWithoutBreakingMutation({
+          prisma: ctx.prisma,
+          workspaceId: workspace.id,
+          actorId: ctx.user.id,
+          recipientIds: [updated.assigneeId],
+          type: NotificationType.TASK_ASSIGNED,
+          title: `You were assigned ${project.key}-${updated.number}`,
+          body: updated.title,
+          data: {
+            taskId: updated.id,
+            taskNumber: updated.number,
+            projectKey: project.key,
+          },
+        });
+      }
+
       return { task: updated };
     }),
 
@@ -701,6 +743,25 @@ export const tasksRouter = router({
         },
         at: new Date().toISOString(),
       });
+
+      if (task.status !== updated.status) {
+        await notifyWithoutBreakingMutation({
+          prisma: ctx.prisma,
+          workspaceId: workspace.id,
+          actorId: ctx.user.id,
+          recipientIds: [task.assigneeId],
+          type: NotificationType.TASK_STATUS_CHANGED,
+          title: `${project.key}-${task.number} moved to ${updated.status}`,
+          body: task.title,
+          data: {
+            taskId: task.id,
+            taskNumber: task.number,
+            projectKey: project.key,
+            previousStatus: task.status,
+            status: updated.status,
+          },
+        });
+      }
 
       return {
         task: updated,
@@ -844,6 +905,25 @@ export const tasksRouter = router({
         at: new Date().toISOString(),
       });
 
+      if (task.status !== updated.status) {
+        await notifyWithoutBreakingMutation({
+          prisma: ctx.prisma,
+          workspaceId: workspace.id,
+          actorId: ctx.user.id,
+          recipientIds: [task.assigneeId],
+          type: NotificationType.TASK_STATUS_CHANGED,
+          title: `${project.key}-${task.number} moved to ${updated.status}`,
+          body: task.title,
+          data: {
+            taskId: task.id,
+            taskNumber: task.number,
+            projectKey: project.key,
+            previousStatus: task.status,
+            status: updated.status,
+          },
+        });
+      }
+
       return { task: updated };
     }),
 
@@ -952,6 +1032,22 @@ export const tasksRouter = router({
           body: comment.body,
         },
         at: new Date().toISOString(),
+      });
+
+      await notifyWithoutBreakingMutation({
+        prisma: ctx.prisma,
+        workspaceId: workspace.id,
+        actorId: ctx.user.id,
+        recipientIds: [task.assigneeId, task.reporterId],
+        type: NotificationType.TASK_COMMENTED,
+        title: `New comment on ${project.key}-${task.number}`,
+        body: input.body,
+        data: {
+          taskId: task.id,
+          taskNumber: task.number,
+          projectKey: project.key,
+          commentId: comment.id,
+        },
       });
 
       return { comment };
