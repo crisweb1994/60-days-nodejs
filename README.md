@@ -1,35 +1,60 @@
 <p align="center">
-  <img src="https://nodejs.org/static/logos/nodejsDark.svg" width="200" alt="Node.js Logo" />
+  <img src="https://nodejs.org/static/logos/nodejsDark.svg" width="170" alt="Node.js Logo" />
 </p>
 
-<h1 align="center">60 天学会 Node.js 全栈开发</h1>
+<h1 align="center">Node.js 60 Days</h1>
 
 <p align="center">
-  <strong>一套面向前端工程师的 60 天 Node.js 全栈系统学习路线</strong>
-</p>
-
-<p align="center">
-  从 Node.js 基础原理到后端框架、数据库、缓存、部署上线与全栈项目实战，帮助你系统补齐全栈能力。
+  <strong>从前端工程师，到能够独立交付后端与全栈项目</strong>
 </p>
 
 <p align="center">
-  <strong>🚧 WIP：</strong> 当前已完整整理 <strong>Day 1-44</strong>（阶段一 + 阶段二全部 + 阶段三的认证/安全/缓存全部 + 阶段四的 Docker / CI/CD / 云部署，含 NestJS + Prisma + PostgreSQL 博客 API v2.0 里程碑、可运行参考实现），Day 45-60 正在持续补充详细讲解、练习与参考答案。
+  Node.js 核心原理 · NestJS · PostgreSQL · Prisma · 认证安全 · Redis · Docker · CI/CD · SaaS 实战
 </p>
 
 <p align="center">
-  <a href="#快速开始">快速开始</a> •
-  <a href="#课程大纲">课程大纲</a> •
-  <a href="#项目实战">项目实战</a> •
-  <a href="#贡献指南">贡献指南</a> •
+  <a href="https://xiguadev.com/node-60days">
+    <img src="https://img.shields.io/badge/在线课程-立即开始-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="在线阅读 Node.js 60 Days" />
+  </a>
+  <a href="#快速开始">
+    <img src="https://img.shields.io/badge/GitHub_实践-运行代码-181717?style=for-the-badge&logo=github&logoColor=white" alt="从 GitHub 开始实践" />
+  </a>
+</p>
+
+<p align="center">
+  已完整发布 <strong>Day 01-55</strong>，包含系统讲解、练习、参考答案与三个渐进式项目。
+</p>
+
+<p align="center">
+  <a href="https://xiguadev.com/node-60days">在线阅读</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#课程大纲">课程大纲</a> ·
+  <a href="#项目实战">项目实战</a> ·
+  <a href="#贡献指南">贡献指南</a> ·
   <a href="./ROADMAP.md">完整路线图</a>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/天数-60天-brightgreen" alt="60 Days" />
-  <img src="https://img.shields.io/badge/每天-3~4小时-blue" alt="3-4 hours/day" />
-  <img src="https://img.shields.io/badge/语言-TypeScript-3178c6" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/License-MIT-yellow" alt="MIT License" />
+  <img src="https://img.shields.io/badge/课程进度-55%2F60-339933?style=flat-square" alt="55 of 60 days complete" />
+  <img src="https://img.shields.io/badge/Node.js-20%2B-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js 20+" />
+  <img src="https://img.shields.io/badge/语言-TypeScript-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/github/stars/crisweb1994/60-days-nodejs?style=flat-square&logo=github" alt="GitHub Stars" />
+  <img src="https://img.shields.io/badge/License-MIT-f5c518?style=flat-square" alt="MIT License" />
 </p>
+
+---
+
+## 在线课程网站
+
+**[xiguadev.com/node-60days](https://xiguadev.com/node-60days)** 已经上线。
+
+在线版适合连续阅读和查找每天的知识点；GitHub 仓库保留完整代码、练习、Docker 环境与项目参考实现。两边内容对应同一条学习路线，可以在网站读完当天内容，再回到仓库动手完成练习。
+
+| 在线阅读 | 本地实践 |
+|---|---|
+| 更舒适的排版与阶段导航 | 完整源码、练习与参考答案 |
+| 适合手机、平板和碎片时间阅读 | 适合运行 API、数据库、Redis 与 Docker |
+| **[打开在线课程 →](https://xiguadev.com/node-60days)** | **[从 Day 01 开始 →](./days/day-01/)** |
 
 ---
 
@@ -39,7 +64,7 @@
 
 这个仓库的目标是：**用 60 天时间，帮助有前端基础的工程师系统掌握 Node.js 全栈开发**，从核心原理到生产部署，逐步建立完整的全栈知识体系和项目交付能力。
 
-> 当前状态说明：仓库已完整完成 **Day 1-44**——**阶段一**（Node.js 核心，Day 1-15）+ **阶段二**（后端框架与数据库，Day 16-30）+ **阶段三**（认证、安全与缓存，Day 31-40）全部正文、练习与可运行参考实现，博客 API 已封版到 **v2.0**（NestJS + Prisma + PostgreSQL，在 v1.0 基础上接入 JWT/RBAC/OAuth 认证、Web 安全防护、Redis 缓存、消息队列与文件上传，详见 Day 40 里程碑）；**阶段四**（DevOps 与部署，Day 41-45）进行中——Day 41 Docker 基础 + Day 42 Docker Compose 编排 + Day 43 CI/CD 流水线（GitHub Actions）+ Day 44 云部署实战（Fly/Railway + 托管 DB/Redis）已完成。**Day 45-60** 已建立路线图与每日页面骨架，详细正文、练习模板与参考答案会继续迭代补充。
+> 当前已完整完成 **Day 01-55**：Node.js 核心、NestJS、PostgreSQL、Prisma、认证安全、Redis、消息队列、Docker、CI/CD、云部署，以及 Next.js + tRPC + PostgreSQL + Redis 的 SaaS 任务管理平台。**Day 56-60** 将继续补充测试、性能优化、系统设计、简历与进阶路线。
 
 ### 这个仓库有什么特点？
 
@@ -82,7 +107,7 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/cris1994.wang/60-days-nodejs.git
+git clone https://github.com/crisweb1994/60-days-nodejs.git
 cd 60-days-nodejs
 
 # 从 Day 1 开始
@@ -95,7 +120,7 @@ cd days/day-01
 - 按天推进，共 60 天完成完整学习闭环
 - 每天投入 3 到 4 小时，兼顾系统学习与动手实践
 - 建议按顺序学习，避免跳过阶段性里程碑
-- Day 1-44 已有完整正文与可运行参考实现，建议按顺序学完；Day 45 起可结合路线图、推荐资源和你自己的练习持续推进
+- Day 01-55 已有完整正文与可运行参考实现；Day 56-60 已建立路线图，会继续补充测试、优化与系统设计内容
 
 ### 学习建议
 
@@ -215,16 +240,16 @@ cd days/day-01
 
 ## 项目实战
 
-本教程围绕三个渐进式项目展开。博客系统（Day 16-40）已有完整可运行的参考实现，见 [`solutions/blog/`](./solutions/blog/)；其余项目代码与脚手架会随更新进度逐步补充。
+本教程围绕三个渐进式项目展开。从原生 Node.js API，到生产级 NestJS 博客系统，再到 Next.js SaaS 全栈平台，三个项目都有可运行实现，并且复用前一阶段学到的工程能力。
 
 ### 1. 🟢 迷你 TODO API（Day 8-10）
-用原生 Node.js 构建，不使用任何框架，理解底层原理。
+用原生 Node.js 构建，不使用任何框架，理解底层原理。参考实现见 [`days/day-10/solutions/mini-todo-api/`](./days/day-10/solutions/mini-todo-api/)。
 
 ### 2. 🔵 博客系统（Day 16-40）
-用 NestJS + PostgreSQL + Redis 构建，覆盖后端核心技能。**Day 16-40 已全部完成，封版到 v2.0**（`solutions/blog/`：`blog-db` 裸 SQL、`blog-prisma` Prisma playground、`blog-api` 生产级 API，含分页/搜索/并发控制/Swagger 文档，并接入 JWT/RBAC/OAuth 认证、Redis 缓存、消息队列与文件上传）。
+用 NestJS + PostgreSQL + Redis 构建，覆盖后端核心技能。**Day 16-40 已全部完成，封版到 v2.0**（[`solutions/blog/`](./solutions/blog/)：`blog-db` 裸 SQL、`blog-prisma` Prisma playground、`blog-api` 生产级 API，含分页/搜索/并发控制/Swagger 文档，并接入 JWT/RBAC/OAuth 认证、Redis 缓存、消息队列与文件上传）。
 
 ### 3. 🔴 SaaS 任务管理平台（Day 46-55）
-全栈项目，用 Next.js + NestJS/tRPC + PostgreSQL + Redis + Docker 构建，作为阶段性综合实战目标。
+全栈项目，用 Next.js + tRPC + PostgreSQL + Redis + BullMQ + Docker 构建，覆盖工作区、RBAC、项目任务、看板、实时通信、通知、数据分析与生产部署。参考实现见 [`solutions/saas/`](./solutions/saas/)。
 
 ---
 
@@ -234,7 +259,7 @@ cd days/day-01
 |-----|------|-----|
 | 运行时 | Node.js v20+ | JavaScript 服务端运行时 |
 | 语言 | TypeScript | 类型安全 |
-| 后端框架 | NestJS | 企业级框架 |
+| 后端框架 | NestJS、tRPC | 企业级 API 与端到端类型安全 |
 | ORM | Prisma | 数据库访问层 |
 | 数据库 | PostgreSQL | 关系型数据库 |
 | 缓存 | Redis | 缓存与消息队列 |
@@ -258,11 +283,12 @@ cd days/day-01
 │   ├── day-02/
 │   └── ...                     # Day 03 ~ Day 60
 ├── solutions/                  # 里程碑参考实现（可运行）
-│   ├── blog/                   # 博客系统（Day 16-30）
+│   ├── blog/                   # 博客系统（Day 16-45）
 │   │   ├── blog-db/            # 裸 SQL：Docker PG + migrations + 练习
 │   │   ├── blog-prisma/        # Prisma playground（Day 25-26）
 │   │   └── blog-api/           # 生产级 NestJS API（v2.0：JWT/RBAC/OAuth + Redis 缓存 + 队列 + 文件上传）
-│   └── auth-basics/            # Day 31：手写 JWT + Session vs JWT 对比（零依赖）
+│   ├── auth-basics/            # Day 31：手写 JWT + Session vs JWT 对比（零依赖）
+│   └── saas/                   # SaaS 任务管理平台（Day 46-55）
 ├── cheatsheets/                # 速查手册
 │   ├── sql-cheatsheet.md
 │   ├── docker-cheatsheet.md
