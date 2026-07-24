@@ -1,10 +1,10 @@
-# SaaS 任务管理平台 — Day 51 实时通信
+# SaaS 任务管理平台 - Day 55 生产部署
 
 这是 Day 46 起的 **SaaS 任务管理平台** 弧线配套代码目录。Day 46 这里只有设计产出；Day 47 开始，它变成一个可以启动的 Next.js + tRPC + Prisma 工程。
 
 这仍然是一个**普通的协作型 SaaS**，不是企业级多租户：用户注册，建工作区，邀请成员，在项目里管理任务。数据归属沿用 Day 46 的设计：`Task -> Project -> Workspace`，能看见 = 你是工作区成员。
 
-Day 48 补上用户与团队；Day 49 补上项目和任务核心业务；Day 50 补上看板读模型、列表筛选分页和拖拽排序后端支持；Day 51 增加 SSE 实时事件流，用来同步任务变更和在线用户。
+Day 48 补上用户与团队；Day 49 补上项目和任务核心业务；Day 50 补上看板和列表；Day 51-54 完成实时通信、通知、数据分析和前端体验；Day 55 增加生产镜像、正式迁移、CI 与部署演练。
 
 ## 当前包含
 
@@ -88,9 +88,35 @@ pnpm build            # 生产构建
 pnpm typecheck        # TypeScript 检查
 pnpm prisma:generate  # 生成 Prisma Client
 pnpm prisma:push      # 把 schema 同步到本地数据库
+pnpm prisma:deploy    # 生产环境执行已提交的 migration
 pnpm prisma:migrate   # 生成正式 migration
 pnpm prisma:studio    # 打开 Prisma Studio
 ```
+
+## Day 55 生产演练
+
+生产拓扑将 Web、BullMQ worker 和数据库迁移拆成独立进程。默认使用 `3100`，不会占用开发服务的 `3000`：
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml ps
+curl "http://localhost:3100/api/trpc/health.ping"
+```
+
+查看迁移和 worker：
+
+```bash
+docker compose -f docker-compose.prod.yml logs migrate
+docker compose -f docker-compose.prod.yml logs worker
+```
+
+停止演练：
+
+```bash
+docker compose -f docker-compose.prod.yml down
+```
+
+正式环境应根据 `.env.production.example` 注入强密码、随机 Session 密钥以及托管 PostgreSQL/Redis 连接串。完整发布、域名、HTTPS、健康检查和回滚说明见 `days/day-55/README.md`。
 
 ## Day 48 API 快速试跑
 
@@ -200,4 +226,4 @@ SSE 终端会收到 `task.created`。任务更新、拖拽、删除和评论也�
 
 ## 当前边界
 
-OAuth 还没有接真实 Provider；邀请 token 现在直接从 API 返回，方便本地练习，生产里应该通过邮件发送。Day 51 的实时事件总线是单实例内存版，适合本地开发和单实例部署；多实例需要 Redis Pub/Sub，离线可见通知留给 Day 52。
+OAuth 还没有接真实 Provider；邀请 token 仍直接从 API 返回，邮件发送器也只是本地日志适配器，生产环境需要接入真实邮件供应商。实时事件总线是单实例内存版，多 Web 实例部署前必须改成 Redis Pub/Sub 或其他跨实例事件系统。Day 55 提供的是可运行的本地生产演练和 CI 配置，没有使用真实云账号、域名或生产密钥，不能据此宣称已经部署到公网。

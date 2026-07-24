@@ -1,9 +1,11 @@
 node_modules/
 .next/
+.worker/
 dist/
 .env
 .env.*
 !.env.example
+!.env.production.example
 *.log
 coverage/
 *.tsbuildinfo

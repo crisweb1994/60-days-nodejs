@@ -1,19 +1,23 @@
 {
   "name": "saas-task-platform",
   "version": "0.1.0",
-  "description": "SaaS task management platform scaffold — Day 47",
+  "description": "SaaS task management platform - Day 55 production deployment",
   "private": true,
   "packageManager": "pnpm@10.15.0",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && pnpm build:worker",
+    "build:worker": "esbuild src/server/notifications/mail-worker.ts --bundle --platform=node --target=node20 --format=cjs --outfile=.worker/mail-worker.cjs --external:@prisma/client",
     "start": "next start",
+    "start:standalone": "node .next/standalone/server.js",
+    "start:worker": "node .worker/mail-worker.cjs",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "worker:mail": "tsx src/server/notifications/mail-worker.ts",
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
+    "prisma:deploy": "prisma migrate deploy",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio"
   },
@@ -24,6 +28,7 @@
     "onlyBuiltDependencies": [
       "@prisma/client",
       "@prisma/engines",
+      "esbuild",
       "prisma"
     ]
   },
@@ -50,6 +55,7 @@
     "@types/react-dom": "^18.3.0",
     "eslint": "^8.57.0",
     "eslint-config-next": "^14.2.25",
+    "esbuild": "^0.25.0",
     "prisma": "^5.22.0",
     "tsx": "^4.20.5",
     "typescript": "^5.5.0"
