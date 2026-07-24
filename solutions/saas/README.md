@@ -1,10 +1,10 @@
-# SaaS 任务管理平台 — Day 51 实时通信
+# SaaS 任务管理平台 - Day 55 生产部署
 
 这是 Day 46 起的 **SaaS 任务管理平台** 弧线配套代码目录。Day 46 这里只有设计产出；Day 47 开始，它变成一个可以启动的 Next.js + tRPC + Prisma 工程。
 
 这仍然是一个**普通的协作型 SaaS**，不是企业级多租户：用户注册，建工作区，邀请成员，在项目里管理任务。数据归属沿用 Day 46 的设计：`Task -> Project -> Workspace`，能看见 = 你是工作区成员。
 
-Day 48 补上用户与团队；Day 49 补上项目和任务核心业务；Day 50 补上看板读模型、列表筛选分页和拖拽排序后端支持；Day 51 增加 SSE 实时事件流，用来同步任务变更和在线用户。
+Day 48 补上用户与团队；Day 49 补上项目和任务核心业务；Day 50 补上看板和列表；Day 51-54 完成实时通信、通知、数据分析和前端体验；Day 55 增加生产镜像、正式迁移、CI 与部署演练。
 
 ## 当前包含
 
@@ -88,9 +88,35 @@ pnpm build            # 生产构建
 pnpm typecheck        # TypeScript 检查
 pnpm prisma:generate  # 生成 Prisma Client
 pnpm prisma:push      # 把 schema 同步到本地数据库
+pnpm prisma:deploy    # 生产环境执行已提交的 migration
 pnpm prisma:migrate   # 生成正式 migration
 pnpm prisma:studio    # 打开 Prisma Studio
 ```
+
+## Day 55 生产演练
+
+生产拓扑将 Web、BullMQ worker 和数据库迁移拆成独立进程。默认使用 `3100`，不会占用开发服务的 `3000`：
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml ps
+curl "http://localhost:3100/api/trpc/health.ping"
+```
+
+查看迁移和 worker：
+
+```bash
+docker compose -f docker-compose.prod.yml logs migrate
+docker compose -f docker-compose.prod.yml logs worker
+```
+
+停止演练：
+
+```bash
+docker compose -f docker-compose.prod.yml down
+```
+
+正式环境应根据 `.env.production.example` 注入强密码、随机 Session 密钥以及托管 PostgreSQL/Redis 连接串。完整发布、域名、HTTPS、健康检查和回滚说明见 `days/day-55/README.md`。
 
 ## Day 48 API 快速试跑
 
@@ -200,52 +226,4 @@ SSE 终端会收到 `task.created`。任务更新、拖拽、删除和评论也�
 
 ## 当前边界
 
-OAuth 还没有接真实 Provider；邀请 token 现在直接从 API 返回，方便本地练习，生产里应该通过邮件发送。Day 51 的实时事件总线是单实例内存版，适合本地开发和单实例部署；多实例需要 Redis Pub/Sub，离线可见通知留给 Day 52。
-=======
-# SaaS 任务管理平台 — 配套设计（Day 46 起）
-
-这是 Day 46 起的 **SaaS 任务管理平台** 弧线的配套代码目录。和 `solutions/blog`（Day 17-45 的博客）平行——博客练的是「单体 CRUD + 缓存 + 队列 + 部署」基本功，这一弧线练的是「**一个带团队协作的普通 SaaS 从 0 到 1**」：从架构设计（Day 46）到脚手架（Day 47）、用户与团队（Day 48），往后到通知、实时、计费。
-
-这是一个**普通的 SaaS**，不是企业级多租户：用户注册 → 建工作区（团队）→ 邀请成员 → 在项目里管任务。数据归属走「项目属于工作区、能看见 = 你是成员」这条朴素链子，**不**做 `orgId` 冗余 + RLS 那套租户隔离机器（见 `docs/decisions/ADR-001`）。
-
-Day 46 是**规划与架构设计**，所以这个目录里**现在全是设计产出，没有可运行代码**——脚手架是 Day 47 的事。
-
-## 目录结构
-
-```
-solutions/saas/
-├── README.md                 # 你在这里
-├── prisma/
-│   └── schema.prisma         # 数据模型（User/Workspace/Membership/Project/Task/...）
-└── docs/
-    ├── architecture.md       # 系统架构、组件/时序/ER 图、部署拓扑
-    ├── api-design.md         # 资源建模、授权、游标分页、错误、幂等
-    └── decisions/            # 关键决策记录（ADR）
-        ├── ADR-001-collaboration-model.md    # 工作区/团队协作模型（不做多租户）
-        ├── ADR-002-sync-before-realtime.md   # 同步优先，实时后置
-        ├── ADR-003-api-style-trpc-vs-rest.md # API 风格
-        ├── ADR-004-soft-delete.md            # 软删除策略
-        └── ADR-005-public-ids-uuid.md         # 公开 ID 用 UUID
-```
-
-## 怎么读
-
-按这个顺序，每篇都为下一篇铺路：
-
-1. **`prisma/schema.prisma`** — 先看数据模型。带着「**一个项目属于一个工作区、能看见 = 你是成员**」这条归属链读，它是整套授权设计的物理体现。
-2. **`docs/architecture.md`** — 看组件怎么切、一个请求怎么穿过系统、部署长什么样。尤其 §3 的「创建任务时序」，它把鉴权 + 授权讲透了。
-3. **`docs/api-design.md`** — 看接口契约。资源怎么分、分页怎么定、错误长什么样、幂等和乐观锁各管什么并发问题。
-4. **`docs/decisions/ADR-*`** — 看每个「为什么」。这些是 Day 46 最重要的产出：架构图会演进，但「为什么这么选」的推理是 durable 的。
-
-## 这版的设计立场（一张表速览）
-
-| 决策点 | 选择 | 一句话理由 | 详见 |
-|---|---|---|---|
-| 协作模型 | 工作区（团队）+ 成员身份，**不做**多租户隔离 | 威胁模型里没有「跨租户互不信任」，不付那个税 | ADR-001 |
-| 实时协作 | 同步优先，实时后置 | YAGNI，把 CRDT 推到真需要时 | ADR-002 |
-| API 风格 | 内部 tRPC，外部留 REST | 端到端类型省掉一整类接口 bug | ADR-003 |
-| 删除策略 | 内容软删可恢复，账号硬删 | 卖「单条可恢复」的粒度 | ADR-004 |
-| 公开 ID | UUID 主键 + 项目内编号对外 | 不可枚举 + 人好念 | ADR-005 |
-
-> 这些立场彼此咬合：协作模型（001）定了「能看见 = 是成员」，授权就顺着 `Task → Project → Workspace` 这条链做；项目内编号（005）配合软删除（004）支撑「误删可恢复」。读到后面会发现没有哪个决策是孤立的——这就是架构设计的味道。
-
+OAuth 还没有接真实 Provider；邀请 token 仍直接从 API 返回，邮件发送器也只是本地日志适配器，生产环境需要接入真实邮件供应商。实时事件总线是单实例内存版，多 Web 实例部署前必须改成 Redis Pub/Sub 或其他跨实例事件系统。Day 55 提供的是可运行的本地生产演练和 CI 配置，没有使用真实云账号、域名或生产密钥，不能据此宣称已经部署到公网。

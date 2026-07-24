@@ -97,7 +97,7 @@ export const authRouter = router({
       };
     }),
 
-  me: protectedProcedure.query(({ ctx }) => {
+  me: publicProcedure.query(({ ctx }) => {
     return {
       user: ctx.user,
     };

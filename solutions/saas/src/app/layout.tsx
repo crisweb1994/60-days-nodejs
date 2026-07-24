@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 
 import "./globals.css";
+import { Providers } from "@/app/providers";
 
 export const metadata: Metadata = {
-  title: "SaaS Task Platform",
-  description: "Day 47 scaffold for a collaborative task management SaaS",
+  title: "Relay — Team task workspace",
+  description: "Plan, coordinate, and finish team work in one focused workspace.",
 };
 
 export default function RootLayout({
@@ -14,7 +15,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body>{children}</body>
+      <body>
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

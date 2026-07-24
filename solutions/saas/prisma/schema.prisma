@@ -54,26 +54,43 @@ enum TaskPriority {
   URGENT
 }
 
+enum NotificationType {
+  TASK_ASSIGNED
+  TASK_COMMENTED
+  TASK_STATUS_CHANGED
+}
+
+enum EmailDeliveryStatus {
+  SKIPPED
+  PENDING
+  QUEUED
+  SENT
+  FAILED
+}
+
 // ----------------------------------------------------------------------------
 // 账号层
 // ----------------------------------------------------------------------------
 
 // User：真实的人。和「在哪个团队里干活」解耦——一个人可同时是 A 团队的 ADMIN、B 团队的 MEMBER。
 model User {
-  id        String   @id @default(uuid()) @db.Uuid
-  email     String   @unique @db.VarChar(255)
-  name      String?  @db.VarChar(100)
+  id           String  @id @default(uuid()) @db.Uuid
+  email        String  @unique @db.VarChar(255)
+  name         String? @db.VarChar(100)
   passwordHash String? @map("password_hash") @db.VarChar(255) // ★ 只存哈希；OAuth 用户为 null
-  avatarUrl String?  @map("avatar_url") @db.VarChar(500)
+  avatarUrl    String? @map("avatar_url") @db.VarChar(500)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  memberships     Membership[]
-  assignedTasks   Task[]    @relation("TaskAssignee")
-  reportedTasks   Task[]    @relation("TaskReporter")
-  authoredComments Comment[]
-  invitationsSent Invitation[]
+  memberships             Membership[]
+  assignedTasks           Task[]                   @relation("TaskAssignee")
+  reportedTasks           Task[]                   @relation("TaskReporter")
+  authoredComments        Comment[]
+  invitationsSent         Invitation[]
+  receivedNotifications   Notification[]           @relation("NotificationRecipient")
+  actedNotifications      Notification[]           @relation("NotificationActor")
+  notificationPreferences NotificationPreference[]
 
   @@map("users")
 }
@@ -86,19 +103,21 @@ model User {
 // 这是「团队/组织」的概念（Day 48 会做它的 CRUD + 邀请 + RBAC），
 // 但它**不是**多租户隔离的"客户边界"——就是一个普通的协作分组。
 model Workspace {
-  id    String @id @default(uuid()) @db.Uuid
+  id        String  @id @default(uuid()) @db.Uuid
   // ★ slug 全局唯一，进 URL：acme.taskapp.dev。一旦分配不建议改（外链会断）。
-  slug  String @unique @db.VarChar(40)
-  name  String @db.VarChar(100)
+  slug      String  @unique @db.VarChar(40)
+  name      String  @db.VarChar(100)
   avatarUrl String? @map("avatar_url") @db.VarChar(500)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  memberships Membership[]
-  projects    Project[]
-  labels      Label[]
-  invitations Invitation[]
+  memberships             Membership[]
+  projects                Project[]
+  labels                  Label[]
+  invitations             Invitation[]
+  notifications           Notification[]
+  notificationPreferences NotificationPreference[]
 
   @@map("workspaces")
 }
@@ -106,11 +125,11 @@ model Workspace {
 // Membership：User × Workspace 的连接表，同时是 RBAC 角色的载体。
 // 权限不在 User 上（一个人在不同团队权限不同），而在「这个人 在 这个团队」这条关系上。
 model Membership {
-  id      String   @id @default(uuid()) @db.Uuid
-  userId  String   @map("user_id") @db.Uuid
-  workspaceId String @map("workspace_id") @db.Uuid
-  role    Role     @default(MEMBER)
-  joinedAt DateTime @default(now()) @map("joined_at") @db.Timestamptz(3)
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  role        Role     @default(MEMBER)
+  joinedAt    DateTime @default(now()) @map("joined_at") @db.Timestamptz(3)
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -123,15 +142,15 @@ model Membership {
 
 // Invitation：待接受的邀请。用一次性 token（而非直接建 Membership），让被邀请者显式接受。
 model Invitation {
-  id        String   @id @default(uuid()) @db.Uuid
-  workspaceId String @map("workspace_id") @db.Uuid
-  email     String   @db.VarChar(255) // 邀请到邮箱，不预设是哪个 user
-  role      Role     @default(MEMBER)
+  id          String    @id @default(uuid()) @db.Uuid
+  workspaceId String    @map("workspace_id") @db.Uuid
+  email       String    @db.VarChar(255) // 邀请到邮箱，不预设是哪个 user
+  role        Role      @default(MEMBER)
   // ★ 邀请 token：高熵随机串，单次使用、带过期。邮件里带的就是它，凭它换 membership。
-  token     String   @unique @db.VarChar(64)
-  invitedById String @map("invited_by_id") @db.Uuid
-  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
-  acceptedAt DateTime? @map("accepted_at") @db.Timestamptz(3)
+  token       String    @unique @db.VarChar(64)
+  invitedById String    @map("invited_by_id") @db.Uuid
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(3)
+  acceptedAt  DateTime? @map("accepted_at") @db.Timestamptz(3)
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   invitedBy User      @relation(fields: [invitedById], references: [id], onDelete: Cascade)
@@ -146,21 +165,21 @@ model Invitation {
 
 // Project：工作区内的项目，承载任务编号前缀（如 ENG-42 的 "ENG"）。
 model Project {
-  id          String @id @default(uuid()) @db.Uuid
-  workspaceId String @map("workspace_id") @db.Uuid
+  id          String    @id @default(uuid()) @db.Uuid
+  workspaceId String    @map("workspace_id") @db.Uuid
   // ★ key 工作区内唯一，当任务编号前缀：ENG-1, ENG-2…。小写字母+数字，3~6 位。
-  key         String @db.VarChar(6)
-  name        String @db.VarChar(100)
-  description String? @db.Text
-  icon        String? @db.VarChar(20) // emoji 或图标名
+  key         String    @db.VarChar(6)
+  name        String    @db.VarChar(100)
+  description String?   @db.Text
+  icon        String?   @db.VarChar(20) // emoji 或图标名
   archivedAt  DateTime? @map("archived_at") @db.Timestamptz(3) // 归档（软停用：仍在列表里，但默认不活跃）
-  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3)  // 软删除（回收站：列表默认 WHERE deleted_at IS NULL，可恢复；ADR-004）
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3) // 软删除（回收站：列表默认 WHERE deleted_at IS NULL，可恢复；ADR-004）
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  tasks     Task[]
+  workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  tasks       Task[]
   taskCounter ProjectTaskCounter? // ★ 取号器：每项目一行，见 ProjectTaskCounter / ADR-005
 
   @@unique([workspaceId, key]) // ★ 同工作区内 key 不能撞
@@ -192,14 +211,16 @@ model Task {
   //   生成姿势见 ADR-005：每项目一行计数器 + 行锁，事务内取号，避免并发撞号。
   number Int
 
-  title       String @db.VarChar(200)
-  description String? @db.Text
-  status      TaskStatus @default(BACKLOG)
+  title       String       @db.VarChar(200)
+  description String?      @db.Text
+  status      TaskStatus   @default(BACKLOG)
   priority    TaskPriority @default(NONE)
 
-  assigneeId String? @map("assignee_id") @db.Uuid
-  reporterId String? @map("reporter_id") @db.Uuid
-  dueDate    DateTime? @map("due_date") @db.Timestamptz(3)
+  assigneeId  String?   @map("assignee_id") @db.Uuid
+  reporterId  String?   @map("reporter_id") @db.Uuid
+  dueDate     DateTime? @map("due_date") @db.Timestamptz(3)
+  // 完成时间是统计事实，不能拿 updatedAt 代替：完成后改标题不应改变完成趋势。
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(3)
 
   // ★ 看板内的排序权重。用 Float 而非 Int：拖动时取相邻两卡 order 的中值即可重排，
   //   不必批量重编号。MVP 够用；精度耗尽（约 50+ 次连续中值后）的升级路是
@@ -209,21 +230,23 @@ model Task {
   // ★ 乐观锁：并发改同一张卡（两人同时拖拽/改字段）时，带 expectedVersion 检测冲突。
   version Int @default(1)
 
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   // ★ 软删除：任务可恢复（撤销删除）。deletedAt 非空 = 已删，列表查询默认带 WHERE deleted_at IS NULL。
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  assignee  User?   @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
-  reporter  User?   @relation("TaskReporter", fields: [reporterId], references: [id], onDelete: SetNull)
-  comments  Comment[]
-  labels    TaskLabel[]
+  project  Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignee User?       @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  reporter User?       @relation("TaskReporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  comments Comment[]
+  labels   TaskLabel[]
 
   // ★ 看板视图最热的查询 = 某项目某状态下的卡按 order 排，给它专门一条联合索引。
   @@unique([projectId, number]) // "ENG-42" 在项目内唯一
   @@index([projectId, status, order]) // 看板视图主查询
   @@index([assigneeId, status]) // 「分给我的」视图
+  @@index([projectId, completedAt]) // 完成趋势按项目和时间范围扫描
+  @@index([projectId, dueDate]) // 逾期任务统计
   @@index([createdAt]) // 列表/时间线
   @@map("tasks")
 }
@@ -235,8 +258,8 @@ model Comment {
   authorId String @map("author_id") @db.Uuid
   body     String @db.Text
 
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
@@ -253,7 +276,7 @@ model Label {
   name        String @db.VarChar(40)
   color       String @default("#6b7280") @db.VarChar(7)
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   tasks     TaskLabel[]
 
   @@unique([workspaceId, name]) // 工作区内标签名不撞
@@ -271,4 +294,51 @@ model TaskLabel {
 
   @@id([taskId, labelId]) // 复合主键，天然防重复打标
   @@map("task_labels")
+}
+
+// Notification 是用户可追溯的通知记录，同时保留邮件投递状态。
+// 站内已读状态与邮件状态分开：看过站内通知，不等于邮件已经送达。
+model Notification {
+  id            String              @id @default(uuid()) @db.Uuid
+  workspaceId   String              @map("workspace_id") @db.Uuid
+  recipientId   String              @map("recipient_id") @db.Uuid
+  actorId       String?             @map("actor_id") @db.Uuid
+  type          NotificationType
+  title         String              @db.VarChar(200)
+  body          String?             @db.Text
+  data          Json                @default("{}")
+  visibleInApp  Boolean             @default(true) @map("visible_in_app")
+  readAt        DateTime?           @map("read_at") @db.Timestamptz(3)
+  emailStatus   EmailDeliveryStatus @default(SKIPPED) @map("email_status")
+  emailQueuedAt DateTime?           @map("email_queued_at") @db.Timestamptz(3)
+  emailSentAt   DateTime?           @map("email_sent_at") @db.Timestamptz(3)
+  emailError    String?             @map("email_error") @db.VarChar(500)
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  recipient User      @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor     User?     @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([recipientId, visibleInApp, readAt, createdAt])
+  @@index([workspaceId, createdAt])
+  @@index([emailStatus, createdAt])
+  @@map("notifications")
+}
+
+// 偏好按「用户 × 工作区」保存。同一个人在不同团队可以采用不同通知策略。
+model NotificationPreference {
+  userId            String   @map("user_id") @db.Uuid
+  workspaceId       String   @map("workspace_id") @db.Uuid
+  inAppEnabled      Boolean  @default(true) @map("in_app_enabled")
+  emailEnabled      Boolean  @default(true) @map("email_enabled")
+  taskAssigned      Boolean  @default(true) @map("task_assigned")
+  taskCommented     Boolean  @default(true) @map("task_commented")
+  taskStatusChanged Boolean  @default(false) @map("task_status_changed")
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@id([userId, workspaceId])
+  @@map("notification_preferences")
 }

@@ -1,0 +1,65 @@
+name: SaaS Day 55 CI
+
+on:
+  pull_request:
+    paths:
+      - "solutions/saas/**"
+  push:
+    branches: [main]
+    paths:
+      - "solutions/saas/**"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: solutions/saas
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: saas_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d saas_ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/saas_ci?schema=public
+      REDIS_URL: redis://localhost:6379/0
+      SESSION_SECRET: ci-session-secret-at-least-thirty-two-bytes
+      NEXT_PUBLIC_APP_NAME: SaaS Task Platform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: solutions/saas/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma:generate
+      - run: pnpm prisma:deploy
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: docker build --target migration -t saas-task-platform-migration:${{ github.sha }} .
+      - run: docker build --target runner -t saas-task-platform:${{ github.sha }} .

@@ -1,0 +1,86 @@
+x-app-build: &app-build
+  context: .
+  target: runner
+  args:
+    NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-SaaS Task Platform}
+    NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+    PRISMA_ENGINES_MIRROR: ${PRISMA_ENGINES_MIRROR:-https://registry.npmmirror.com/-/binary/prisma}
+
+x-app-environment: &app-environment
+  NODE_ENV: production
+  DATABASE_URL: postgresql://${POSTGRES_USER:-saas}:${POSTGRES_PASSWORD:-saas_prod_change_me}@postgres:5432/${POSTGRES_DB:-saas}?schema=public
+  REDIS_URL: redis://redis:6379/0
+  SESSION_SECRET: ${SESSION_SECRET:-local-production-smoke-secret-change-me}
+  NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-SaaS Task Platform}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-saas}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-saas_prod_change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-saas}
+    volumes:
+      - saas_prod_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-saas} -d ${POSTGRES_DB:-saas}"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - saas_prod_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  migrate:
+    image: saas-task-platform-migration:day55
+    build:
+      context: .
+      target: migration
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+        PRISMA_ENGINES_MIRROR: ${PRISMA_ENGINES_MIRROR:-https://registry.npmmirror.com/-/binary/prisma}
+    environment: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  web:
+    image: saas-task-platform:day55
+    build: *app-build
+    restart: unless-stopped
+    environment: *app-environment
+    ports:
+      - "${APP_PORT:-3100}:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  worker:
+    image: saas-task-platform:day55
+    command: ["node", "dist/mail-worker.cjs"]
+    restart: unless-stopped
+    environment: *app-environment
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+volumes:
+  saas_prod_postgres_data:
+  saas_prod_redis_data:
