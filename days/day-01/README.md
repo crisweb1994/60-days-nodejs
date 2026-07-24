@@ -18,7 +18,8 @@ Node.js 是一个基于 Chrome V8 引擎的 **JavaScript 运行时**。它让 Ja
 | 维度 | 浏览器 JS | Node.js |
 |------|----------|---------|
 | 运行环境 | 浏览器 | 操作系统 |
-| 全局对象 | `window` | `global` / `globalThis` |
+| 标准全局对象访问 | `globalThis` | `globalThis`|
+| 历史环境别名 | `window` | `global`|
 | DOM/BOM | ✅ 有 | ❌ 没有 |
 | 文件系统 | ❌ 受限 | ✅ 完整访问 |
 | 网络请求 | `fetch` / `XMLHttpRequest` | `http` / `https` / `fetch` (v18+) |
