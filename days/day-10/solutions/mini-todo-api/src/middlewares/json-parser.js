@@ -13,6 +13,7 @@ export function jsonParser(options = {}) {
         } catch (error) {
           res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
           res.end(JSON.stringify({ error: error.message }));
+          req.destroy();
           return;
         }
       }
@@ -30,7 +31,6 @@ function readBody(req, limit) {
     req.on('data', (chunk) => {
       size += chunk.length;
       if (size > limit) {
-        req.destroy();
         reject(new Error('请求体超出大小限制'));
         return;
       }
