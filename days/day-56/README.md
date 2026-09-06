@@ -19,13 +19,13 @@
 
 ## 1. 先想清楚测什么，再纠结用什么框架
 
-测试金字塔说底层要有大量单元测试，顶上是少量 E2E；Kent C. Dodds 的测试奖杯说集成测试才该占大头，底座是静态检查。Google 自己后来又发了篇《Pyramid or Crab?》，意思是形状取决于上下局，别当教条。这些模型吵的其实是同一件事：**反馈速度和置信度之间的兑换率**。
+测试金字塔说底层要有大量单元测试，顶上是少量 E2E；Kent C. Dodds 提出的测试奖杯（Testing Trophy）模型认为集成测试才应该占大头，底座是类型检查这类静态手段。Google 自己后来又发了篇《Pyramid or Crab?》，意思是形状取决于具体场景，别当教条。这些模型争论的其实是同一件事：**测试跑得快和测得真之间怎么取舍**。
 
-- 单元测试快、定位准，但为了快要隔离依赖，隔离本身就是一种造假
-- E2E 最接近用户看到的真相，但慢、脆、挂了不知道该修哪层
-- 集成测试夹在中间：留下真实的数据库和业务组装，只砍掉浏览器
+- 单元测试快、定位准，但为了快必须隔离依赖，隔离本身就是一种失真
+- E2E 最接近用户实际看到的效果，但慢、容易受环境影响，挂了不知道该修哪一层
+- 集成测试夹在中间：保留真实的数据库和业务组装，只去掉浏览器
 
-对一个后端为主的项目，我更认同奖杯的分配，原因很实际：这套 SaaS 的核心风险几乎都不在纯函数里，而在"权限检查有没有在查询之前执行""乐观锁在并发更新时返不返回 CONFLICT""通知偏好关掉之后还会不会写库"这类跨模块的行为里。单独测任何一个函数都证明不了这些。
+对一个后端为主的项目，我更认同奖杯模型的分配，原因很实际：这套 SaaS 的核心风险几乎都不在纯函数里，而在"权限检查有没有在查询之前执行""乐观锁在并发更新时返不返回 CONFLICT""通知偏好关掉之后还会不会写库"这类跨模块的行为里。单独测任何一个函数都证明不了这些。
 
 但金字塔没有错。状态机转移表、cursor 编解码这类纯逻辑，用单元测试穷举组合是几毫秒的事，用集成测试覆盖同样的分支要慢两个数量级。所以最终的形状是：
 
@@ -33,7 +33,7 @@
 |---|---|---|---|
 | 单元 | 30 | 纯函数与纯内存模块 | < 1s |
 | 集成 | 37 | tRPC 路由 + 真实 PG/Redis | ~10s |
-| E2E | 2 | 注册到建任务的完整浏览器旅程 | ~25s（含 dev server 冷启动） |
+| E2E | 2 | 注册到建任务的完整浏览器流程 | ~25s（含 dev server 冷启动） |
 
 数字自己会说话：越往上越贵。E2E 不是主要回归手段，是最后的兜底。
 
@@ -58,9 +58,9 @@ ROADMAP 里这一天写的是 Jest，参考实现最终用了 Vitest。这不是
 
 1. **这个项目的模块体系是 ESM。** Jest 对 ESM 的支持至今带着实验性标志，`transformIgnorePatterns` 的坑每个踩过的人都不想再踩。Vitest 基于 Vite 的原生 ESM 管线，`import` 什么都不用配。
 2. **API 几乎兼容。** `describe/it/expect` 一致，迁移成本低到可以随时反悔。
-3. **速度。** 2026 年的几组公开基准里，Vitest 冷启动比 Jest 快数倍；对本项目这种规模差距不明显，但 watch 体验是日常有感差异。
+3. **速度。** 2026 年的几组公开基准里，Vitest 冷启动比 Jest 快数倍；对本项目这种规模差距不明显，但 watch 模式的响应速度是每天写代码都能感觉到的。
 
-Jest 仍然是存量代码库的事实标准，npm 周下载量还领先一个身位。如果你在维护一个已经跑着 Jest 的仓库，没有理由为了新而迁。另外 Node 原生的 `node:test` 在纯 JS 场景下更快、零依赖，值得知道——但它的生态（UI、coverage 集成、setup 体系）还撑不起这个项目需要的结构。
+Jest 仍然是存量代码库的事实标准，npm 周下载量仍然领先不少。如果你在维护一个已经跑着 Jest 的仓库，没有理由为了新而迁。另外 Node 原生的 `node:test` 在纯 JS 场景下更快、零依赖，值得知道——但它的生态（UI、coverage 集成、setup 体系）还撑不起这个项目需要的结构。
 
 配置里值得说明的一点：单元和集成分成两个 project，而不是混在一起。
 
@@ -78,7 +78,7 @@ projects: [
 
 ## 3. 单元测试：把纯逻辑的组合跑满
 
-单元测试的价值密度取决于被测代码的决策密度。这套项目里最值得的是状态机：
+一段代码值不值得写单元测试，先看它里面有多少判断和边界。这套项目里最值得测的是状态机：
 
 ```ts
 // tests/unit/task-status.test.ts
@@ -125,7 +125,7 @@ it("签名正确但已过期的令牌被拒绝", () => {
 
 ## 4. 集成测试：tRPC 改变了 Supertest 的经典位置
 
-传统 Node 教程里，集成测试的标准姿势是 Supertest：把 Express app 传给它，在进程内发 HTTP 请求，不用真的占端口。这套项目的技术栈让这个姿势变得别扭——业务不在 Express app 里，在 tRPC router 里，HTTP 层只剩 Next.js 的 fetch adapter 一层薄壳。Supertest 能测到的东西（Cookie 解析、CORS、adapter 组装）恰恰不是风险所在。
+传统 Node 教程里，集成测试的标准做法是 Supertest：把 Express app 传给它，在进程内发 HTTP 请求，不用真的占端口。这套项目的技术栈让这个做法变得别扭——业务不在 Express app 里，在 tRPC router 里，HTTP 层只剩 Next.js 的 fetch adapter 一层薄壳。Supertest 能测到的东西（Cookie 解析、CORS、adapter 组装）恰恰不是风险所在。
 
 tRPC 官方给的答案是 `createCaller`：
 
@@ -171,15 +171,15 @@ export async function resetDatabase(): Promise<void> {
 }
 ```
 
-每个用例的 `beforeEach` 清一次库，之后的世界里只有这个用例自己种下的数据——断言可以写死 `number` 从 1 开始，不用先查一遍当前值。TRUNCATE 比 DELETE 快（不逐行、可 RESTART IDENTITY 重置序列），比"每用例开事务最后回滚"简单（不用把事务边界穿透到被测代码内部，Prisma 的 `$transaction` 会嵌套冲突）。代价是隔离粒度粗到"整个库"，于是有了下一条纪律：
+每个用例的 `beforeEach` 清一次库，清完之后表里只有这个用例自己写入的数据——断言可以写死 `number` 从 1 开始，不用先查一遍当前值。TRUNCATE 比 DELETE 快（不逐行、可 RESTART IDENTITY 重置序列），比"每用例开事务最后回滚"简单（不用把事务边界穿透到被测代码内部，Prisma 的 `$transaction` 会嵌套冲突）。代价是隔离粒度粗到"整个库"，于是有了下一条纪律：
 
 **集成测试文件必须串行执行。** 两个文件并发时，A 文件的 TRUNCATE 会和 B 文件正在写入的 INSERT 抢锁，PostgreSQL 直接报死锁。这里有个我亲手踩出来的坑值得原样记录：我把 `fileParallelism: false` 写在了 project 配置里，Vitest 安静地忽略了它（`ProjectConfig` 类型里根本没有这个字段，多余的键不报错），测试文件照常并发，报出来的死锁错误完全不像配置问题。最后是把配置提到根级才生效。教训：**配置不生效时不会有人通知你，验证并行设置要靠并发冲突这种事故**。
 
 Redis 走同一条思路但便宜些：队列用 db 15（开发队列在 db 0），邮件入队是真实断言——`emailStatus` 最终是 `QUEUED` 而不是 mock 出来的。通知偏好关掉邮件的用例断言 `SKIPPED`，两者都只有在 Redis 和 PG 都真实工作时才成立。
 
-### 种子数据走真实路由
+### 测试数据也走真实路由
 
-测试世界里"注册一个用户"有两条路：直接 `prisma.user.create` 插库，或者调用 `auth.register` 路由。参考实现选了后者：
+在测试里"注册一个用户"有两条路：直接 `prisma.user.create` 插库，或者调用 `auth.register` 路由。参考实现选了后者：
 
 ```ts
 export async function seedWorld() {
@@ -190,7 +190,7 @@ export async function seedWorld() {
 }
 ```
 
-多花几十毫秒，买到的额外覆盖是"一个新用户能走通最小上手脚"这件事本身。哪天注册路由被改坏，所有测试会在 setup 阶段集体报警，而不是在每个用例里各挂一次然后让人怀疑人生。
+多花几十毫秒，买到的额外覆盖是"一个新用户能走通最短的上手流程"这件事本身。哪天注册路由被改坏，所有测试会在 setup 阶段集体报警，而不是在每个用例里各挂一次然后让人怀疑人生。
 
 ---
 
@@ -254,9 +254,9 @@ Day 55 的 CI 顺序是 install → migrate → typecheck → build → docker b
 - run: pnpm build
 ```
 
-单元在前是因为它最快，挂了能省掉后面所有步骤的等待时间。集成测试直接用 workflow 已有的 PostgreSQL/Redis service containers——Day 55 为迁移验证准备的基础设施，今天测试免费复用，这也是当时把 service containers 而不是 Testcontainers 写进 CI 的回报：依赖声明一次，迁移和测试共享。Testcontainers 的优势在本地与 CI 一致、容器生命周期写进测试代码，如果将来测试需要特殊的数据库扩展或版本矩阵，再迁不迟。
+单元在前是因为它最快，挂了能省掉后面所有步骤的等待时间。集成测试直接用 workflow 已有的 PostgreSQL/Redis service containers——Day 55 为迁移验证准备的基础设施，今天测试直接复用，这也是当时把 service containers 而不是 Testcontainers 写进 CI 的回报：依赖声明一次，迁移和测试共享。Testcontainers 的优势在本地与 CI 一致、容器生命周期写进测试代码，如果将来测试需要特殊的数据库扩展或版本矩阵，再迁不迟。
 
-E2E 单独一个 job：独立数据库（`saas_e2e_ci`）、`playwright install --with-deps chromium`、失败时上传 trace 和截图 artifact。不并进 verify job 是因为它慢（浏览器下载 + dev server 启动），PR 迭代时不该让每轮 push 都等它，可以先让它非必须（`continue-on-error` 可选）跑着观察稳定性，再转为硬门禁。
+E2E 单独一个 job：独立数据库（`saas_e2e_ci`）、`playwright install --with-deps chromium`、失败时上传 trace 和截图 artifact。不并进 verify job 是因为它慢（浏览器下载 + dev server 启动），PR 迭代时不该让每轮 push 都等它，可以先让它非必须（`continue-on-error` 可选）跑着观察稳定性，再升级为必须通过的关卡。
 
 到这里，CI 的承诺升级了：从"这个提交能构建、类型没破"变成"这个提交没有破坏已知的行为"。
 
@@ -274,11 +274,11 @@ E2E 单独一个 job：独立数据库（`saas_e2e_ci`）、`playwright install 
 | 测试间共享状态 | 每用例 TRUNCATE 清库 |
 | 数据冲突（重名 slug/email） | 时间戳 + 随机后缀生成唯一值 |
 | 文件并发抢锁 | 根级 `fileParallelism: false` 强制串行 |
-| 依赖执行顺序 | 每个用例自种种子，不依赖前一个用例的残留 |
+| 依赖执行顺序 | 每个用例自己准备数据，不依赖前一个用例的残留 |
 
 设计原则只有一句：**一个用例的成败只取决于它自己的代码和被测代码**。做到这一点，"重跑一次看看"就从日常操作变成了异常信号。
 
-真出现 flaky 时的处置可以参考 Martin Fowler 推广的 quarantine-then-fix：先隔离（标记 skip 或移出主套件），让 CI 恢复可信，然后限期修掉——隔离不是终点，被隔离的测试每多躺一天，就少一天的覆盖。隔离要有记录、有 owner、有期限，否则"临时 skip"会变成永久的沉默。
+真出现 flaky 时的处置可以参考 Martin Fowler 推广的"先隔离、后修复"（quarantine-then-fix）：先隔离（标记 skip 或移出主套件），让 CI 恢复可信，然后限期修掉——隔离不是终点，被隔离的测试每多躺一天，就少一天的覆盖。隔离要有记录、有 owner、有期限，否则"临时 skip"会变成永久的沉默。
 
 ---
 
@@ -295,7 +295,7 @@ E2E 单独一个 job：独立数据库（`saas_e2e_ci`）、`playwright install 
 | `tests/unit/session.test.ts` | 令牌签名/过期/篡改、Cookie 属性 |
 | `tests/unit/event-bus.test.ts` | 内存 pub/sub 的投递与 presence 语义 |
 | `tests/integration/setup-env.ts` | 加载 `.env.test`，CI 环境变量优先 |
-| `tests/integration/test-utils.ts` | caller 工厂、TRUNCATE 清库、种子世界 |
+| `tests/integration/test-utils.ts` | caller 工厂、TRUNCATE 清库、测试数据构造 |
 | `tests/integration/auth.test.ts` | 注册归一化、登录防枚举、会话边界 |
 | `tests/integration/tasks.test.ts` | 编号递增、乐观锁、状态机、拖拽排序、软删除、游标分页 |
 | `tests/integration/notifications.test.ts` | 指派通知、偏好过滤、邮件入队 |
