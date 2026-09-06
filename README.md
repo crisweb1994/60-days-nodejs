@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/课程进度-55%2F60-339933?style=flat-square" alt="55 of 60 days complete" />
+  <img src="https://img.shields.io/badge/课程进度-56%2F60-339933?style=flat-square" alt="56 of 60 days complete" />
   <img src="https://img.shields.io/badge/Node.js-20%2B-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js 20+" />
   <img src="https://img.shields.io/badge/语言-TypeScript-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/github/stars/crisweb1994/60-days-nodejs?style=flat-square&logo=github" alt="GitHub Stars" />
@@ -230,7 +230,7 @@ cd days/day-01
 
 | 天数 | 主题 | 关键词 |
 |-----|------|-------|
-| Day 56 | [测试策略与实战](./days/day-56/) | Jest、Supertest、Playwright |
+| Day 56 | [测试策略与实战](./days/day-56/) | 测试金字塔、Vitest、tRPC createCaller、Playwright |
 | Day 57 | [性能优化](./days/day-57/) | Profiling、压测、查询优化 |
 | Day 58 | [系统设计思维](./days/day-58/) | CAP、负载均衡、经典设计题 |
 | Day 59 | [简历包装与面试准备](./days/day-59/) | 项目描述、知识点清单 |
