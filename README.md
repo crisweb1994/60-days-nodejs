@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  已完整发布 <strong>Day 01-55</strong>，包含系统讲解、练习、参考答案与三个渐进式项目。
+  仓库已有完整正文：<strong>Day 01-55、Day 57-60</strong>；Day 56 测试策略仍待补充。
 </p>
 
 <p align="center">
@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/课程进度-55%2F60-339933?style=flat-square" alt="55 of 60 days complete" />
+  <img src="https://img.shields.io/badge/课程进度-59%2F60-339933?style=flat-square" alt="59 of 60 lesson pages complete; Day 56 pending" />
   <img src="https://img.shields.io/badge/Node.js-20%2B-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js 20+" />
   <img src="https://img.shields.io/badge/语言-TypeScript-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/github/stars/crisweb1994/60-days-nodejs?style=flat-square&logo=github" alt="GitHub Stars" />
@@ -64,7 +64,7 @@
 
 这个仓库的目标是：**用 60 天时间，帮助有前端基础的工程师系统掌握 Node.js 全栈开发**，从核心原理到生产部署，逐步建立完整的全栈知识体系和项目交付能力。
 
-> 当前已完整完成 **Day 01-55**：Node.js 核心、NestJS、PostgreSQL、Prisma、认证安全、Redis、消息队列、Docker、CI/CD、云部署，以及 Next.js + tRPC + PostgreSQL + Redis 的 SaaS 任务管理平台。**Day 56-60** 将继续补充测试、性能优化、系统设计、简历与进阶路线。
+> 当前仓库已有完整正文 **Day 01-55、Day 57-60**：覆盖 Node.js 核心、NestJS、PostgreSQL、Prisma、认证安全、Redis、消息队列、Docker、CI/CD、云部署，以及 Next.js + tRPC + PostgreSQL + Redis 的 SaaS 任务管理平台。**Day 56 测试策略仍待补充**。
 
 ### 这个仓库有什么特点？
 
@@ -120,7 +120,7 @@ cd days/day-01
 - 按天推进，共 60 天完成完整学习闭环
 - 每天投入 3 到 4 小时，兼顾系统学习与动手实践
 - 建议按顺序学习，避免跳过阶段性里程碑
-- Day 01-55 已有完整正文与可运行参考实现；Day 56-60 已建立路线图，会继续补充测试、优化与系统设计内容
+- Day 01-55、Day 57-60 已有课程正文；Day 56 测试策略仍待补充
 
 ### 学习建议
 
@@ -227,6 +227,8 @@ cd days/day-01
 ### 🟣 阶段六：测试、优化与系统设计（Day 56-60）
 
 补齐测试能力，深入性能优化，建立系统设计方法论，打磨简历项目。
+
+Day 57-60 已补充正文与练习；Day 56 测试策略仍待完善。
 
 | 天数 | 主题 | 关键词 |
 |-----|------|-------|
