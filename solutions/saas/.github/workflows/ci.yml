@@ -1,4 +1,4 @@
-name: SaaS Day 55 CI
+name: SaaS CI
 
 on:
   pull_request:
@@ -60,6 +60,68 @@ jobs:
       - run: pnpm prisma:generate
       - run: pnpm prisma:deploy
       - run: pnpm typecheck
+      # 测试放进 deploy 前面：migrate 通过只说明 schema 没问题，
+      # 业务行为是否被这次提交破坏，要由测试回答。
+      - run: pnpm test:unit
+      - run: pnpm test:integration
       - run: pnpm build
       - run: docker build --target migration -t saas-task-platform-migration:${{ github.sha }} .
       - run: docker build --target runner -t saas-task-platform:${{ github.sha }} .
+
+  e2e:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: solutions/saas
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: saas_e2e_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d saas_e2e_ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/saas_e2e_ci?schema=public
+      REDIS_URL: redis://localhost:6379/14
+      SESSION_SECRET: e2e-session-secret-at-least-32-bytes
+      NEXT_PUBLIC_APP_NAME: SaaS Task Platform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: solutions/saas/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma:generate
+      - run: pnpm prisma:deploy
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: solutions/saas/playwright-report
+          retention-days: 7

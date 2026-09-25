@@ -9,3 +9,7 @@ dist/
 *.log
 coverage/
 *.tsbuildinfo
+
+# Day 56 测试产物
+!.env.test.example
+playwright-report/

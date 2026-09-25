@@ -1,10 +1,10 @@
-# SaaS 任务管理平台 - Day 55 生产部署
+# SaaS 任务管理平台 - Day 56 测试体系
 
 这是 Day 46 起的 **SaaS 任务管理平台** 弧线配套代码目录。Day 46 这里只有设计产出；Day 47 开始，它变成一个可以启动的 Next.js + tRPC + Prisma 工程。
 
 这仍然是一个**普通的协作型 SaaS**，不是企业级多租户：用户注册，建工作区，邀请成员，在项目里管理任务。数据归属沿用 Day 46 的设计：`Task -> Project -> Workspace`，能看见 = 你是工作区成员。
 
-Day 48 补上用户与团队；Day 49 补上项目和任务核心业务；Day 50 补上看板和列表；Day 51-54 完成实时通信、通知、数据分析和前端体验；Day 55 增加生产镜像、正式迁移、CI 与部署演练。
+Day 48 补上用户与团队；Day 49 补上项目和任务核心业务；Day 50 补上看板和列表；Day 51-54 完成实时通信、通知、数据分析和前端体验；Day 55 增加生产镜像、正式迁移、CI 与部署演练；Day 56 补上单元/集成/E2E 三层测试（`src/server` 行覆盖 80%+）。
 
 ## 当前包含
 
@@ -35,6 +35,13 @@ solutions/saas/
 │   └── schema.prisma                 # Day 46 数据模型
 ├── docs/                             # Day 46 架构设计与 ADR
 ├── docker-compose.yml                # PostgreSQL + Redis
+├── tests/
+│   ├── unit/                         # Day 56 纯逻辑单元测试
+│   ├── integration/                  # Day 56 tRPC + 真库集成测试
+│   └── e2e/                          # Day 56 Playwright 关键路径
+├── vitest.config.ts                  # unit/integration 双 project
+├── playwright.config.ts              # E2E 配置（独立 saas_e2e 库）
+├── .env.test.example                 # 测试环境变量模板
 ├── .env.example
 ├── next.config.mjs
 ├── package.json
@@ -86,6 +93,12 @@ curl "http://localhost:3000/api/trpc/health.ping"
 pnpm dev              # 启动 Next.js 开发服务
 pnpm build            # 生产构建
 pnpm typecheck        # TypeScript 检查
+pnpm test             # 单元 + 集成测试
+pnpm test:unit        # 只跑纯逻辑（不依赖数据库）
+pnpm test:integration # 只跑 tRPC + 真库（需 docker compose up -d + pnpm test:migrate）
+pnpm test:coverage    # 覆盖率报告（src/server）
+pnpm test:e2e         # Playwright 关键路径（自动启动 dev server :3210）
+pnpm test:migrate     # 准备/迁移 saas_test 测试库
 pnpm prisma:generate  # 生成 Prisma Client
 pnpm prisma:push      # 把 schema 同步到本地数据库
 pnpm prisma:deploy    # 生产环境执行已提交的 migration

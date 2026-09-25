@@ -232,7 +232,7 @@ Day 57-60 已补充正文与练习；Day 56 测试策略仍待完善。
 
 | 天数 | 主题 | 关键词 |
 |-----|------|-------|
-| Day 56 | [测试策略与实战](./days/day-56/) | Jest、Supertest、Playwright |
+| Day 56 | [测试策略与实战](./days/day-56/) | 测试金字塔、Vitest、tRPC createCaller、Playwright |
 | Day 57 | [性能优化](./days/day-57/) | Profiling、压测、查询优化 |
 | Day 58 | [系统设计思维](./days/day-58/) | CAP、负载均衡、经典设计题 |
 | Day 59 | [简历包装与面试准备](./days/day-59/) | 项目描述、知识点清单 |
